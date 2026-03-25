@@ -446,12 +446,14 @@ def _gen_method(lines: list[str], f: dict, op_type: str, types_by_name: dict) ->
     # Track which GraphQL args are expanded inputs so we can construct them in the body
     expanded_inputs: dict[str, tuple[str, list]] = {}  # gql_arg_name -> (InputClassName, [(py_name, gql_field_name, is_optional)])
 
-    # First pass: collect all non-input arg names to detect collisions
-    scalar_arg_names = set()
+    # First pass: collect all input field names to detect collisions
+    input_field_names: set[str] = set()
     for a in args:
         input_cls = _is_input_object(a["type"], types_by_name)
-        if not input_cls:
-            scalar_arg_names.add(safe_name(a["name"]))
+        if input_cls:
+            input_type = types_by_name[input_cls]
+            for inf in input_type.get("inputFields") or []:
+                input_field_names.add(safe_name(inf["name"]))
 
     for a in args:
         aname = safe_name(a["name"])
@@ -459,35 +461,26 @@ def _gen_method(lines: list[str], f: dict, op_type: str, types_by_name: dict) ->
         input_cls = _is_input_object(a["type"], types_by_name)
 
         if input_cls:
-            # Check for name collisions between input fields and other args
+            # Expand input fields as kwargs (they keep their natural names)
             input_type = types_by_name[input_cls]
             input_fields = input_type.get("inputFields") or []
-            field_names = {safe_name(inf["name"]) for inf in input_fields}
-            has_collision = bool(field_names & scalar_arg_names)
-
-            if has_collision:
-                # Fall back to keeping the input as a typed arg
-                if anullable:
-                    optional_params.append((aname, a["name"], atype, None))
+            expanded_fields = []
+            for inf in input_fields:
+                inf_name = safe_name(inf["name"])
+                inf_type, inf_nullable = resolve_type(inf["type"])
+                expanded_fields.append((inf_name, inf["name"], inf_nullable))
+                if inf_nullable:
+                    optional_params.append((inf_name, inf["name"], inf_type, input_cls))
                 else:
-                    required_params.append((aname, a["name"], atype, None))
-            else:
-                # Expand this input's fields into the method signature
-                expanded_fields = []
-                for inf in input_fields:
-                    inf_name = safe_name(inf["name"])
-                    inf_type, inf_nullable = resolve_type(inf["type"])
-                    expanded_fields.append((inf_name, inf["name"], inf_nullable))
-                    if inf_nullable:
-                        optional_params.append((inf_name, inf["name"], inf_type, input_cls))
-                    else:
-                        required_params.append((inf_name, inf["name"], inf_type, input_cls))
-                expanded_inputs[a["name"]] = (input_cls, expanded_fields)
+                    required_params.append((inf_name, inf["name"], inf_type, input_cls))
+            expanded_inputs[a["name"]] = (input_cls, expanded_fields)
         else:
+            # Prefix direct args with _ if they collide with expanded input fields
+            param_name = f"_{aname}" if aname in input_field_names else aname
             if anullable:
-                optional_params.append((aname, a["name"], atype, None))
+                optional_params.append((param_name, a["name"], atype, None))
             else:
-                required_params.append((aname, a["name"], atype, None))
+                required_params.append((param_name, a["name"], atype, None))
 
     # Build method signature
     params = ["self"]
@@ -536,11 +529,12 @@ def _gen_method(lines: list[str], f: dict, op_type: str, types_by_name: dict) ->
         if a["name"] in expanded_inputs:
             # Construct the input object from expanded kwargs
             input_cls, fields = expanded_inputs[a["name"]]
-            field_assignments = ", ".join(f"{safe_name(gql_f)}={safe_name(gql_f)}" for _, gql_f, _ in fields)
+            field_assignments = ", ".join(f"{safe_name(gql_f)}={param_name}" for param_name, gql_f, _ in fields)
             var_entries.append(f'"{a["name"]}": _prepare_input({input_cls}({field_assignments}))')
         else:
             aname = safe_name(a["name"])
-            var_entries.append(f'"{a["name"]}": _prepare_input({aname})')
+            param_name = f"_{aname}" if aname in input_field_names else aname
+            var_entries.append(f'"{a["name"]}": _prepare_input({param_name})')
 
     # Determine how to handle the return value
     is_scalar = _is_scalar_return(f["type"])

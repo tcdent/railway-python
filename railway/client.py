@@ -1684,11 +1684,11 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("observabilityDashboardReset")
 
-    def observability_dashboard_update(self, id: str, input: list["ObservabilityDashboardUpdateInput"]) -> bool:
+    def observability_dashboard_update(self, _id: str, dashboard_item: "ObservabilityDashboardItemCreateInput", display_config: Any, id: str) -> bool:
         query = """mutation($id: String!, $input: [ObservabilityDashboardUpdateInput!]!) { observabilityDashboardUpdate(id: $id, input: $input) }"""
         variables: dict[str, Any] = {
-            "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "id": _prepare_input(_id),
+            "input": _prepare_input(ObservabilityDashboardUpdateInput(dashboard_item=dashboard_item, display_config=display_config, id=id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("observabilityDashboardUpdate")
@@ -2570,12 +2570,12 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("workspacePermissionChange")
 
-    def workspace_policy_item_update(self, workspace_id: str, *, enabled: Optional[bool] = None, input: Optional["WorkspacePolicyItemUpdateInput"] = None, policy: Optional["WorkspacePolicyName"] = None) -> bool:
+    def workspace_policy_item_update(self, enabled: bool, policy: "WorkspacePolicyName", workspace_id: str, *, _enabled: Optional[bool] = None, _policy: Optional["WorkspacePolicyName"] = None) -> bool:
         query = """mutation($enabled: Boolean, $input: WorkspacePolicyItemUpdateInput, $policy: WorkspacePolicyName, $workspaceId: String!) { workspacePolicyItemUpdate(enabled: $enabled, input: $input, policy: $policy, workspaceId: $workspaceId) }"""
         variables: dict[str, Any] = {
-            "enabled": _prepare_input(enabled),
-            "input": _prepare_input(input),
-            "policy": _prepare_input(policy),
+            "enabled": _prepare_input(_enabled),
+            "input": _prepare_input(WorkspacePolicyItemUpdateInput(enabled=enabled, policy=policy)),
+            "policy": _prepare_input(_policy),
             "workspaceId": _prepare_input(workspace_id),
         }
         variables = {k: v for k, v in variables.items() if v is not None}

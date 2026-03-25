@@ -40,27 +40,33 @@ class RailwayClient:
 
     def __init__(
         self,
-        token: str,
         *,
+        api_token: str | None = None,
+        project_token: str | None = None,
         endpoint: str | None = None,
         timeout: float = 30.0,
-        is_project_token: bool = False,
     ):
         """
         Create a new Railway API client.
 
+        Provide exactly one of api_token or project_token.
+
         Args:
-            token: Railway API token (account, workspace, or project token).
+            api_token: Railway API token (account or workspace scope).
+            project_token: Railway project-scoped token.
             endpoint: Override the default API endpoint.
             timeout: Request timeout in seconds.
-            is_project_token: Set True when using a project-scoped token.
         """
+        if api_token and project_token:
+            raise ValueError("Provide exactly one of api_token or project_token, not both.")
+        if not api_token and not project_token:
+            raise ValueError("Provide either api_token or project_token.")
         self._endpoint = endpoint or self.ENDPOINT
         self._timeout = timeout
-        if is_project_token:
-            self._headers = {"Content-Type": "application/json", "Project-Access-Token": token}
+        if project_token:
+            self._headers = {"Content-Type": "application/json", "Project-Access-Token": project_token}
         else:
-            self._headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
+            self._headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_token}"}
         self._client = httpx.Client(timeout=timeout)
 
     def close(self) -> None:
@@ -130,12 +136,12 @@ class RailwayClient:
         _data = self._execute(query).get("auditLogEventTypeInfo")
         return TypeAdapter(list["AuditLogEventTypeInfo"]).validate_python(_data) if _data else []
 
-    def audit_logs(self, workspace_id: str, *, after: Optional[str] = None, before: Optional[str] = None, filter: Optional["AuditLogFilterInput"] = None, first: Optional[int] = None, last: Optional[int] = None, sort: Optional["SortOrder"] = None) -> "QueryAuditLogsConnection":
+    def audit_logs(self, workspace_id: str, *, after: Optional[str] = None, before: Optional[str] = None, end_date: Optional[str] = None, environment_id: Optional[str] = None, event_types: Optional[list[str]] = None, project_id: Optional[str] = None, start_date: Optional[str] = None, first: Optional[int] = None, last: Optional[int] = None, sort: Optional["SortOrder"] = None) -> "QueryAuditLogsConnection":
         query = """query($after: String, $before: String, $filter: AuditLogFilterInput, $first: Int, $last: Int, $sort: SortOrder, $workspaceId: String!) { auditLogs(after: $after, before: $before, filter: $filter, first: $first, last: $last, sort: $sort, workspaceId: $workspaceId) { edges { cursor } pageInfo { endCursor hasNextPage hasPreviousPage startCursor } } }"""
         variables: dict[str, Any] = {
             "after": _prepare_input(after),
             "before": _prepare_input(before),
-            "filter": _prepare_input(filter),
+            "filter": _prepare_input(AuditLogFilterInput(end_date=end_date, environment_id=environment_id, event_types=event_types, project_id=project_id, start_date=start_date)),
             "first": _prepare_input(first),
             "last": _prepare_input(last),
             "sort": _prepare_input(sort),
@@ -240,13 +246,13 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return QueryDeploymentEventsConnection.model_validate(self._execute(query, variables).get("deploymentEvents"))
 
-    def deployment_instance_executions(self, input: "DeploymentInstanceExecutionListInput", *, after: Optional[str] = None, before: Optional[str] = None, first: Optional[int] = None, last: Optional[int] = None) -> "QueryDeploymentInstanceExecutionsConnection":
+    def deployment_instance_executions(self, environment_id: str, service_id: str, *, after: Optional[str] = None, before: Optional[str] = None, first: Optional[int] = None, last: Optional[int] = None) -> "QueryDeploymentInstanceExecutionsConnection":
         query = """query($after: String, $before: String, $first: Int, $input: DeploymentInstanceExecutionListInput!, $last: Int) { deploymentInstanceExecutions(after: $after, before: $before, first: $first, input: $input, last: $last) { edges { cursor } pageInfo { endCursor hasNextPage hasPreviousPage startCursor } } }"""
         variables: dict[str, Any] = {
             "after": _prepare_input(after),
             "before": _prepare_input(before),
             "first": _prepare_input(first),
-            "input": _prepare_input(input),
+            "input": _prepare_input(DeploymentInstanceExecutionListInput(environment_id=environment_id, service_id=service_id)),
             "last": _prepare_input(last),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
@@ -288,13 +294,13 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return QueryDeploymentTriggersConnection.model_validate(self._execute(query, variables).get("deploymentTriggers"))
 
-    def deployments(self, input: "DeploymentListInput", *, after: Optional[str] = None, before: Optional[str] = None, first: Optional[int] = None, last: Optional[int] = None) -> "QueryDeploymentsConnection":
+    def deployments(self, *, after: Optional[str] = None, before: Optional[str] = None, first: Optional[int] = None, environment_id: Optional[str] = None, include_deleted: Optional[bool] = None, project_id: Optional[str] = None, service_id: Optional[str] = None, status: Optional["DeploymentStatusInput"] = None, last: Optional[int] = None) -> "QueryDeploymentsConnection":
         query = """query($after: String, $before: String, $first: Int, $input: DeploymentListInput!, $last: Int) { deployments(after: $after, before: $before, first: $first, input: $input, last: $last) { edges { cursor } pageInfo { endCursor hasNextPage hasPreviousPage startCursor } } }"""
         variables: dict[str, Any] = {
             "after": _prepare_input(after),
             "before": _prepare_input(before),
             "first": _prepare_input(first),
-            "input": _prepare_input(input),
+            "input": _prepare_input(DeploymentListInput(environment_id=environment_id, include_deleted=include_deleted, project_id=project_id, service_id=service_id, status=status)),
             "last": _prepare_input(last),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
@@ -406,13 +412,13 @@ class RailwayClient:
         _data = self._execute(query, variables).get("estimatedUsage")
         return TypeAdapter(list["EstimatedUsage"]).validate_python(_data) if _data else []
 
-    def events(self, project_id: str, *, after: Optional[str] = None, before: Optional[str] = None, environment_id: Optional[str] = None, filter: Optional["EventFilterInput"] = None, first: Optional[int] = None, last: Optional[int] = None) -> "QueryEventsConnection":
+    def events(self, project_id: str, *, after: Optional[str] = None, before: Optional[str] = None, environment_id: Optional[str] = None, action: Optional["EventStringListFilter"] = None, object: Optional["EventStringListFilter"] = None, service_id: Optional["EventStringListFilter"] = None, first: Optional[int] = None, last: Optional[int] = None) -> "QueryEventsConnection":
         query = """query($after: String, $before: String, $environmentId: String, $filter: EventFilterInput, $first: Int, $last: Int, $projectId: String!) { events(after: $after, before: $before, environmentId: $environmentId, filter: $filter, first: $first, last: $last, projectId: $projectId) { edges { cursor } pageInfo { endCursor hasNextPage hasPreviousPage startCursor } } }"""
         variables: dict[str, Any] = {
             "after": _prepare_input(after),
             "before": _prepare_input(before),
             "environmentId": _prepare_input(environment_id),
-            "filter": _prepare_input(filter),
+            "filter": _prepare_input(EventFilterInput(action=action, object=object, service_id=service_id)),
             "first": _prepare_input(first),
             "last": _prepare_input(last),
             "projectId": _prepare_input(project_id),
@@ -633,12 +639,12 @@ class RailwayClient:
         _data = self._execute(query, variables).get("metrics")
         return TypeAdapter(list["MetricsResult"]).validate_python(_data) if _data else []
 
-    def notification_deliveries(self, *, after: Optional[str] = None, before: Optional[str] = None, filter: Optional["NotificationDeliveryFilterInput"] = None, first: Optional[int] = None, last: Optional[int] = None) -> "QueryNotificationDeliveriesConnection":
+    def notification_deliveries(self, *, after: Optional[str] = None, before: Optional[str] = None, environment_id: Optional[str] = None, only_unread: Optional[bool] = None, project_id: Optional[str] = None, status: Optional["NotificationStatus"] = None, type: Optional["NotificationDeliveryType"] = None, workspace_id: Optional[str] = None, first: Optional[int] = None, last: Optional[int] = None) -> "QueryNotificationDeliveriesConnection":
         query = """query($after: String, $before: String, $filter: NotificationDeliveryFilterInput, $first: Int, $last: Int) { notificationDeliveries(after: $after, before: $before, filter: $filter, first: $first, last: $last) { edges { cursor } pageInfo { endCursor hasNextPage hasPreviousPage startCursor } } }"""
         variables: dict[str, Any] = {
             "after": _prepare_input(after),
             "before": _prepare_input(before),
-            "filter": _prepare_input(filter),
+            "filter": _prepare_input(NotificationDeliveryFilterInput(environment_id=environment_id, only_unread=only_unread, project_id=project_id, status=status, type=type, workspace_id=workspace_id)),
             "first": _prepare_input(first),
             "last": _prepare_input(last),
         }
@@ -860,10 +866,10 @@ class RailwayClient:
         _data = self._execute(query, variables).get("regions")
         return TypeAdapter(list["Region"]).validate_python(_data) if _data else []
 
-    def resource_access(self, explicit_resource_owner: "ExplicitOwnerInput") -> "ResourceAccess":
+    def resource_access(self, id: str, *, type: Optional["ResourceOwnerType"] = None) -> "ResourceAccess":
         query = """query($explicitResourceOwner: ExplicitOwnerInput!) { resourceAccess(explicitResourceOwner: $explicitResourceOwner) { deployment { disallowed } project { disallowed } } }"""
         variables: dict[str, Any] = {
-            "explicitResourceOwner": _prepare_input(explicit_resource_owner),
+            "explicitResourceOwner": _prepare_input(ExplicitOwnerInput(id=id, type=type)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return ResourceAccess.model_validate(self._execute(query, variables).get("resourceAccess"))
@@ -1185,10 +1191,10 @@ class RailwayClient:
 
     # ── Mutations ──────────────────────────────────────────
 
-    def api_token_create(self, input: "ApiTokenCreateInput") -> str:
+    def api_token_create(self, name: str, *, workspace_id: Optional[str] = None) -> str:
         query = """mutation($input: ApiTokenCreateInput!) { apiTokenCreate(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ApiTokenCreateInput(name=name, workspace_id=workspace_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("apiTokenCreate")
@@ -1201,19 +1207,19 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("apiTokenDelete")
 
-    def base_environment_override(self, id: str, input: "BaseEnvironmentOverrideInput") -> bool:
+    def base_environment_override(self, id: str, *, base_environment_override_id: Optional[str] = None) -> bool:
         query = """mutation($id: String!, $input: BaseEnvironmentOverrideInput!) { baseEnvironmentOverride(id: $id, input: $input) }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(BaseEnvironmentOverrideInput(base_environment_override_id=base_environment_override_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("baseEnvironmentOverride")
 
-    def bucket_create(self, input: "BucketCreateInput") -> "Bucket":
+    def bucket_create(self, project_id: str, *, environment_id: Optional[str] = None, name: Optional[str] = None) -> "Bucket":
         query = """mutation($input: BucketCreateInput!) { bucketCreate(input: $input) { createdAt id name projectId updatedAt project { baseEnvironmentId botPrEnvironments createdAt deletedAt description expiredAt focusedPrEnvironments id isPublic isTempProject name prDeploys subscriptionPlanLimit teamId updatedAt workspaceId } } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(BucketCreateInput(environment_id=environment_id, name=name, project_id=project_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Bucket.model_validate(self._execute(query, variables).get("bucketCreate"))
@@ -1228,11 +1234,11 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return BucketS3CompatibleCredentials.model_validate(self._execute(query, variables).get("bucketCredentialsReset"))
 
-    def bucket_update(self, id: str, input: "BucketUpdateInput") -> "Bucket":
+    def bucket_update(self, id: str, name: str) -> "Bucket":
         query = """mutation($id: String!, $input: BucketUpdateInput!) { bucketUpdate(id: $id, input: $input) { createdAt id name projectId updatedAt project { baseEnvironmentId botPrEnvironments createdAt deletedAt description expiredAt focusedPrEnvironments id isPublic isTempProject name prDeploys subscriptionPlanLimit teamId updatedAt workspaceId } } }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(BucketUpdateInput(name=name)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Bucket.model_validate(self._execute(query, variables).get("bucketUpdate"))
@@ -1246,18 +1252,18 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("canvasViewMerge")
 
-    def cli_event_track(self, input: "CliEventTrackInput") -> bool:
+    def cli_event_track(self, arch: str, cli_version: str, command: str, duration_ms: int, is_ci: bool, os: str, success: bool, *, error_message: Optional[str] = None, sub_command: Optional[str] = None) -> bool:
         query = """mutation($input: CliEventTrackInput!) { cliEventTrack(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(CliEventTrackInput(arch=arch, cli_version=cli_version, command=command, duration_ms=duration_ms, error_message=error_message, is_ci=is_ci, os=os, sub_command=sub_command, success=success)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("cliEventTrack")
 
-    def custom_domain_create(self, input: "CustomDomainCreateInput") -> "CustomDomain":
+    def custom_domain_create(self, domain: str, environment_id: str, project_id: str, service_id: str, *, target_port: Optional[int] = None) -> "CustomDomain":
         query = """mutation($input: CustomDomainCreateInput!) { customDomainCreate(input: $input) { cdnMode createdAt deletedAt domain edgeId environmentId id projectId serviceId targetPort updatedAt cnameCheck { link message } status { certificateErrorMessage certificateRetryable verificationDnsHost verificationToken verified } } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(CustomDomainCreateInput(domain=domain, environment_id=environment_id, project_id=project_id, service_id=service_id, target_port=target_port)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return CustomDomain.model_validate(self._execute(query, variables).get("customDomainCreate"))
@@ -1288,11 +1294,11 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("customerCreateFreePlanSubscription")
 
-    def customer_toggle_payouts_to_credits(self, customer_id: str, input: "customerTogglePayoutsToCreditsInput") -> bool:
+    def customer_toggle_payouts_to_credits(self, customer_id: str, is_withdrawing_to_credits: bool) -> bool:
         query = """mutation($customerId: String!, $input: customerTogglePayoutsToCreditsInput!) { customerTogglePayoutsToCredits(customerId: $customerId, input: $input) }"""
         variables: dict[str, Any] = {
             "customerId": _prepare_input(customer_id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(customerTogglePayoutsToCreditsInput(is_withdrawing_to_credits=is_withdrawing_to_credits)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("customerTogglePayoutsToCredits")
@@ -1313,10 +1319,10 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("deploymentCancel")
 
-    def deployment_instance_execution_create(self, input: "DeploymentInstanceExecutionCreateInput") -> bool:
+    def deployment_instance_execution_create(self, service_instance_id: str) -> bool:
         query = """mutation($input: DeploymentInstanceExecutionCreateInput!) { deploymentInstanceExecutionCreate(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(DeploymentInstanceExecutionCreateInput(service_instance_id=service_instance_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("deploymentInstanceExecutionCreate")
@@ -1362,10 +1368,10 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("deploymentStop")
 
-    def deployment_trigger_create(self, input: "DeploymentTriggerCreateInput") -> "DeploymentTrigger":
+    def deployment_trigger_create(self, branch: str, environment_id: str, project_id: str, provider: str, repository: str, service_id: str, *, check_suites: Optional[bool] = None, root_directory: Optional[str] = None) -> "DeploymentTrigger":
         query = """mutation($input: DeploymentTriggerCreateInput!) { deploymentTriggerCreate(input: $input) { baseEnvironmentOverrideId branch checkSuites environmentId id projectId provider repository serviceId validCheckSuites } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(DeploymentTriggerCreateInput(branch=branch, check_suites=check_suites, environment_id=environment_id, project_id=project_id, provider=provider, repository=repository, root_directory=root_directory, service_id=service_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return DeploymentTrigger.model_validate(self._execute(query, variables).get("deploymentTriggerCreate"))
@@ -1378,11 +1384,11 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("deploymentTriggerDelete")
 
-    def deployment_trigger_update(self, id: str, input: "DeploymentTriggerUpdateInput") -> "DeploymentTrigger":
+    def deployment_trigger_update(self, id: str, *, branch: Optional[str] = None, check_suites: Optional[bool] = None, repository: Optional[str] = None, root_directory: Optional[str] = None) -> "DeploymentTrigger":
         query = """mutation($id: String!, $input: DeploymentTriggerUpdateInput!) { deploymentTriggerUpdate(id: $id, input: $input) { baseEnvironmentOverrideId branch checkSuites environmentId id projectId provider repository serviceId validCheckSuites } }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(DeploymentTriggerUpdateInput(branch=branch, check_suites=check_suites, repository=repository, root_directory=root_directory)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return DeploymentTrigger.model_validate(self._execute(query, variables).get("deploymentTriggerUpdate"))
@@ -1398,19 +1404,19 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return DockerComposeImport.model_validate(self._execute(query, variables).get("dockerComposeImport"))
 
-    def egress_gateway_association_create(self, input: "EgressGatewayCreateInput") -> list["EgressGateway"]:
+    def egress_gateway_association_create(self, environment_id: str, service_id: str, *, region: Optional[str] = None) -> list["EgressGateway"]:
         query = """mutation($input: EgressGatewayCreateInput!) { egressGatewayAssociationCreate(input: $input) { ipv4 region } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(EgressGatewayCreateInput(environment_id=environment_id, region=region, service_id=service_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         _data = self._execute(query, variables).get("egressGatewayAssociationCreate")
         return TypeAdapter(list["EgressGateway"]).validate_python(_data) if _data else []
 
-    def egress_gateway_associations_clear(self, input: "EgressGatewayServiceTargetInput") -> bool:
+    def egress_gateway_associations_clear(self, environment_id: str, service_id: str) -> bool:
         query = """mutation($input: EgressGatewayServiceTargetInput!) { egressGatewayAssociationsClear(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(EgressGatewayServiceTargetInput(environment_id=environment_id, service_id=service_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("egressGatewayAssociationsClear")
@@ -1431,10 +1437,10 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("emailChangeInitiate")
 
-    def environment_create(self, input: "EnvironmentCreateInput") -> "Environment":
+    def environment_create(self, name: str, project_id: str, *, apply_changes_in_background: Optional[bool] = None, ephemeral: Optional[bool] = None, skip_initial_deploys: Optional[bool] = None, source_environment_id: Optional[str] = None, stage_initial_changes: Optional[bool] = None) -> "Environment":
         query = """mutation($input: EnvironmentCreateInput!) { environmentCreate(input: $input) { canAccess createdAt deletedAt id isEphemeral name projectId unmergedChangesCount updatedAt meta { baseBranch branch latestSuccessfulGitHubDeploymentId prCommentId prNumber prRepo prTitle skippedResourceIds } } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(EnvironmentCreateInput(apply_changes_in_background=apply_changes_in_background, ephemeral=ephemeral, name=name, project_id=project_id, skip_initial_deploys=skip_initial_deploys, source_environment_id=source_environment_id, stage_initial_changes=stage_initial_changes)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Environment.model_validate(self._execute(query, variables).get("environmentCreate"))
@@ -1467,11 +1473,11 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("environmentPatchCommitStaged")
 
-    def environment_rename(self, id: str, input: "EnvironmentRenameInput") -> "Environment":
+    def environment_rename(self, id: str, name: str) -> "Environment":
         query = """mutation($id: String!, $input: EnvironmentRenameInput!) { environmentRename(id: $id, input: $input) { canAccess createdAt deletedAt id isEphemeral name projectId unmergedChangesCount updatedAt meta { baseBranch branch latestSuccessfulGitHubDeploymentId prCommentId prNumber prRepo prTitle skippedResourceIds } } }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(EnvironmentRenameInput(name=name)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Environment.model_validate(self._execute(query, variables).get("environmentRename"))
@@ -1486,10 +1492,10 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return EnvironmentPatch.model_validate(self._execute(query, variables).get("environmentStageChanges"))
 
-    def environment_triggers_deploy(self, input: "EnvironmentTriggersDeployInput") -> bool:
+    def environment_triggers_deploy(self, environment_id: str, project_id: str, service_id: str) -> bool:
         query = """mutation($input: EnvironmentTriggersDeployInput!) { environmentTriggersDeploy(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(EnvironmentTriggersDeployInput(environment_id=environment_id, project_id=project_id, service_id=service_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("environmentTriggersDeploy")
@@ -1511,50 +1517,50 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("fairUseAgree")
 
-    def feature_flag_add(self, input: "FeatureFlagToggleInput") -> bool:
+    def feature_flag_add(self, flag: "ActiveFeatureFlag") -> bool:
         query = """mutation($input: FeatureFlagToggleInput!) { featureFlagAdd(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(FeatureFlagToggleInput(flag=flag)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("featureFlagAdd")
 
-    def feature_flag_remove(self, input: "FeatureFlagToggleInput") -> bool:
+    def feature_flag_remove(self, flag: "ActiveFeatureFlag") -> bool:
         query = """mutation($input: FeatureFlagToggleInput!) { featureFlagRemove(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(FeatureFlagToggleInput(flag=flag)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("featureFlagRemove")
 
-    def github_repo_deploy(self, input: "GitHubRepoDeployInput") -> str:
+    def github_repo_deploy(self, project_id: str, repo: str, *, branch: Optional[str] = None, environment_id: Optional[str] = None) -> str:
         query = """mutation($input: GitHubRepoDeployInput!) { githubRepoDeploy(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(GitHubRepoDeployInput(branch=branch, environment_id=environment_id, project_id=project_id, repo=repo)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("githubRepoDeploy")
 
-    def github_repo_update(self, input: "GitHubRepoUpdateInput") -> bool:
+    def github_repo_update(self, environment_id: str, project_id: str, service_id: str) -> bool:
         query = """mutation($input: GitHubRepoUpdateInput!) { githubRepoUpdate(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(GitHubRepoUpdateInput(environment_id=environment_id, project_id=project_id, service_id=service_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("githubRepoUpdate")
 
-    def heroku_import_variables(self, input: "HerokuImportVariablesInput") -> int:
+    def heroku_import_variables(self, environment_id: str, heroku_app_id: str, project_id: str, service_id: str) -> int:
         query = """mutation($input: HerokuImportVariablesInput!) { herokuImportVariables(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(HerokuImportVariablesInput(environment_id=environment_id, heroku_app_id=heroku_app_id, project_id=project_id, service_id=service_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("herokuImportVariables")
 
-    def integration_create(self, input: "IntegrationCreateInput") -> "Integration":
+    def integration_create(self, config: Any, name: str, project_id: str, *, integration_auth_id: Optional[str] = None) -> "Integration":
         query = """mutation($input: IntegrationCreateInput!) { integrationCreate(input: $input) { config id name projectId } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(IntegrationCreateInput(config=config, integration_auth_id=integration_auth_id, name=name, project_id=project_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Integration.model_validate(self._execute(query, variables).get("integrationCreate"))
@@ -1567,11 +1573,11 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("integrationDelete")
 
-    def integration_update(self, id: str, input: "IntegrationUpdateInput") -> "Integration":
+    def integration_update(self, id: str, config: Any, name: str, project_id: str, *, integration_auth_id: Optional[str] = None) -> "Integration":
         query = """mutation($id: String!, $input: IntegrationUpdateInput!) { integrationUpdate(id: $id, input: $input) { config id name projectId } }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(IntegrationUpdateInput(config=config, integration_auth_id=integration_auth_id, name=name, project_id=project_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Integration.model_validate(self._execute(query, variables).get("integrationUpdate"))
@@ -1584,19 +1590,19 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return Project.model_validate(self._execute(query, variables).get("inviteCodeUse"))
 
-    def job_application_create(self, input: "JobApplicationCreateInput", resume: Any) -> bool:
+    def job_application_create(self, email: str, job_id: str, name: str, why: str, resume: Any) -> bool:
         query = """mutation($input: JobApplicationCreateInput!, $resume: Upload!) { jobApplicationCreate(input: $input, resume: $resume) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(JobApplicationCreateInput(email=email, job_id=job_id, name=name, why=why)),
             "resume": _prepare_input(resume),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("jobApplicationCreate")
 
-    def login_session_auth(self, input: "LoginSessionAuthInput") -> bool:
+    def login_session_auth(self, code: str, *, hostname: Optional[str] = None) -> bool:
         query = """mutation($input: LoginSessionAuthInput!) { loginSessionAuth(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(LoginSessionAuthInput(code=code, hostname=hostname)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("loginSessionAuth")
@@ -1637,10 +1643,10 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("notificationDeliveriesMarkAsRead")
 
-    def notification_rule_create(self, input: "CreateNotificationRuleInput") -> "NotificationRule":
+    def notification_rule_create(self, channel_configs: list[Any], event_types: list[str], workspace_id: str, *, ephemeral_environments: Optional[bool] = None, project_id: Optional[str] = None, severities: Optional[list["NotificationSeverity"]] = None) -> "NotificationRule":
         query = """mutation($input: CreateNotificationRuleInput!) { notificationRuleCreate(input: $input) { createdAt environmentId ephemeralEnvironments eventTypes id projectId serviceId updatedAt workspaceId channels { config createdAt id updatedAt workspaceId } } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(CreateNotificationRuleInput(channel_configs=channel_configs, ephemeral_environments=ephemeral_environments, event_types=event_types, project_id=project_id, severities=severities, workspace_id=workspace_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return NotificationRule.model_validate(self._execute(query, variables).get("notificationRuleCreate"))
@@ -1653,19 +1659,19 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("notificationRuleDelete")
 
-    def notification_rule_update(self, id: str, input: "UpdateNotificationRuleInput") -> "NotificationRule":
+    def notification_rule_update(self, id: str, *, channel_configs: Optional[list[Any]] = None, ephemeral_environments: Optional[bool] = None, event_types: Optional[list[str]] = None, severities: Optional[list["NotificationSeverity"]] = None) -> "NotificationRule":
         query = """mutation($id: String!, $input: UpdateNotificationRuleInput!) { notificationRuleUpdate(id: $id, input: $input) { createdAt environmentId ephemeralEnvironments eventTypes id projectId serviceId updatedAt workspaceId channels { config createdAt id updatedAt workspaceId } } }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(UpdateNotificationRuleInput(channel_configs=channel_configs, ephemeral_environments=ephemeral_environments, event_types=event_types, severities=severities)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return NotificationRule.model_validate(self._execute(query, variables).get("notificationRuleUpdate"))
 
-    def observability_dashboard_create(self, input: "ObservabilityDashboardCreateInput") -> bool:
+    def observability_dashboard_create(self, environment_id: str, *, items: Optional[list["ObservabilityDashboardUpdateInput"]] = None) -> bool:
         query = """mutation($input: ObservabilityDashboardCreateInput!) { observabilityDashboardCreate(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ObservabilityDashboardCreateInput(environment_id=environment_id, items=items)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("observabilityDashboardCreate")
@@ -1695,10 +1701,10 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("passkeyDelete")
 
-    def plugin_create(self, input: "PluginCreateInput") -> "Plugin":
+    def plugin_create(self, name: str, project_id: str, *, environment_id: Optional[str] = None, friendly_name: Optional[str] = None) -> "Plugin":
         query = """mutation($input: PluginCreateInput!) { pluginCreate(input: $input) { createdAt deletedAt deprecatedAt friendlyName id logsEnabled migrationDatabaseServiceId project { baseEnvironmentId botPrEnvironments createdAt deletedAt description expiredAt focusedPrEnvironments id isPublic isTempProject name prDeploys subscriptionPlanLimit teamId updatedAt workspaceId } } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(PluginCreateInput(environment_id=environment_id, friendly_name=friendly_name, name=name, project_id=project_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Plugin.model_validate(self._execute(query, variables).get("pluginCreate"))
@@ -1712,71 +1718,71 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("pluginDelete")
 
-    def plugin_reset(self, id: str, input: "ResetPluginInput") -> bool:
+    def plugin_reset(self, id: str, environment_id: str) -> bool:
         query = """mutation($id: String!, $input: ResetPluginInput!) { pluginReset(id: $id, input: $input) }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(ResetPluginInput(environment_id=environment_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("pluginReset")
 
-    def plugin_reset_credentials(self, id: str, input: "ResetPluginCredentialsInput") -> str:
+    def plugin_reset_credentials(self, id: str, environment_id: str) -> str:
         query = """mutation($id: String!, $input: ResetPluginCredentialsInput!) { pluginResetCredentials(id: $id, input: $input) }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(ResetPluginCredentialsInput(environment_id=environment_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("pluginResetCredentials")
 
-    def plugin_restart(self, id: str, input: "PluginRestartInput") -> "Plugin":
+    def plugin_restart(self, id: str, *, environment_id: Optional[str] = None) -> "Plugin":
         query = """mutation($id: String!, $input: PluginRestartInput!) { pluginRestart(id: $id, input: $input) { createdAt deletedAt deprecatedAt friendlyName id logsEnabled migrationDatabaseServiceId project { baseEnvironmentId botPrEnvironments createdAt deletedAt description expiredAt focusedPrEnvironments id isPublic isTempProject name prDeploys subscriptionPlanLimit teamId updatedAt workspaceId } } }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(PluginRestartInput(environment_id=environment_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Plugin.model_validate(self._execute(query, variables).get("pluginRestart"))
 
-    def plugin_start(self, id: str, input: "PluginRestartInput") -> bool:
+    def plugin_start(self, id: str, *, environment_id: Optional[str] = None) -> bool:
         query = """mutation($id: String!, $input: PluginRestartInput!) { pluginStart(id: $id, input: $input) }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(PluginRestartInput(environment_id=environment_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("pluginStart")
 
-    def plugin_update(self, id: str, input: "PluginUpdateInput") -> "Plugin":
+    def plugin_update(self, id: str, friendly_name: str) -> "Plugin":
         query = """mutation($id: String!, $input: PluginUpdateInput!) { pluginUpdate(id: $id, input: $input) { createdAt deletedAt deprecatedAt friendlyName id logsEnabled migrationDatabaseServiceId project { baseEnvironmentId botPrEnvironments createdAt deletedAt description expiredAt focusedPrEnvironments id isPublic isTempProject name prDeploys subscriptionPlanLimit teamId updatedAt workspaceId } } }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(PluginUpdateInput(friendly_name=friendly_name)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Plugin.model_validate(self._execute(query, variables).get("pluginUpdate"))
 
-    def preferences_update(self, input: "PreferencesUpdateData") -> "Preferences":
+    def preferences_update(self, *, build_failed_email: Optional[bool] = None, changelog_email: Optional[bool] = None, community_email: Optional[bool] = None, deploy_crashed_email: Optional[bool] = None, ephemeral_environment_email: Optional[bool] = None, marketing_email: Optional[bool] = None, subprocessor_updates_email: Optional[bool] = None, template_queue_email: Optional[bool] = None, token: Optional[str] = None, usage_email: Optional[bool] = None) -> "Preferences":
         query = """mutation($input: PreferencesUpdateData!) { preferencesUpdate(input: $input) { buildFailedEmail changelogEmail communityEmail deployCrashedEmail ephemeralEnvironmentEmail id marketingEmail subprocessorUpdatesEmail templateQueueEmail usageEmail } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(PreferencesUpdateData(build_failed_email=build_failed_email, changelog_email=changelog_email, community_email=community_email, deploy_crashed_email=deploy_crashed_email, ephemeral_environment_email=ephemeral_environment_email, marketing_email=marketing_email, subprocessor_updates_email=subprocessor_updates_email, template_queue_email=template_queue_email, token=token, usage_email=usage_email)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Preferences.model_validate(self._execute(query, variables).get("preferencesUpdate"))
 
-    def private_network_create_or_get(self, input: "PrivateNetworkCreateOrGetInput") -> "PrivateNetwork":
+    def private_network_create_or_get(self, environment_id: str, name: str, project_id: str, tags: list[str]) -> "PrivateNetwork":
         query = """mutation($input: PrivateNetworkCreateOrGetInput!) { privateNetworkCreateOrGet(input: $input) { createdAt deletedAt dnsName environmentId name networkId projectId publicId tags } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(PrivateNetworkCreateOrGetInput(environment_id=environment_id, name=name, project_id=project_id, tags=tags)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return PrivateNetwork.model_validate(self._execute(query, variables).get("privateNetworkCreateOrGet"))
 
-    def private_network_endpoint_create_or_get(self, input: "PrivateNetworkEndpointCreateOrGetInput") -> "PrivateNetworkEndpoint":
+    def private_network_endpoint_create_or_get(self, environment_id: str, private_network_id: str, service_id: str, service_name: str, tags: list[str]) -> "PrivateNetworkEndpoint":
         query = """mutation($input: PrivateNetworkEndpointCreateOrGetInput!) { privateNetworkEndpointCreateOrGet(input: $input) { createdAt deletedAt dnsName newDnsName privateIps publicId serviceInstanceId tags } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(PrivateNetworkEndpointCreateOrGetInput(environment_id=environment_id, private_network_id=private_network_id, service_id=service_id, service_name=service_name, tags=tags)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return PrivateNetworkEndpoint.model_validate(self._execute(query, variables).get("privateNetworkEndpointCreateOrGet"))
@@ -1816,10 +1822,10 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return Project.model_validate(self._execute(query, variables).get("projectClaim"))
 
-    def project_create(self, input: "ProjectCreateInput") -> "Project":
+    def project_create(self, *, default_environment_name: Optional[str] = None, description: Optional[str] = None, is_monorepo: Optional[bool] = None, is_public: Optional[bool] = None, name: Optional[str] = None, pr_deploys: Optional[bool] = None, repo: Optional["ProjectCreateRepo"] = None, runtime: Optional["PublicRuntime"] = None, workspace_id: Optional[str] = None) -> "Project":
         query = """mutation($input: ProjectCreateInput!) { projectCreate(input: $input) { baseEnvironmentId botPrEnvironments createdAt deletedAt description expiredAt focusedPrEnvironments id isPublic isTempProject name prDeploys subscriptionPlanLimit teamId updatedAt workspaceId baseEnvironment { canAccess createdAt deletedAt id isEphemeral name projectId unmergedChangesCount updatedAt } members { avatar email id name } team { adoptionLevel avatar createdAt id name preferredRegion slackChannelId updatedAt } workspace { adoptionLevel allowDeprecatedRegions avatar banReason createdAt discordRole has2FAEnforcement hasGuardrailsAccess hasSAML id name preferredRegion redactedDueTo2FAPending slackChannelId subscriptionPlanLimit updatedAt usersWithout2FA } } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ProjectCreateInput(default_environment_name=default_environment_name, description=description, is_monorepo=is_monorepo, is_public=is_public, name=name, pr_deploys=pr_deploys, repo=repo, runtime=runtime, workspace_id=workspace_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Project.model_validate(self._execute(query, variables).get("projectCreate"))
@@ -1832,18 +1838,18 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("projectDelete")
 
-    def project_feature_flag_add(self, input: "ProjectFeatureFlagToggleInput") -> bool:
+    def project_feature_flag_add(self, flag: "ActiveProjectFeatureFlag", project_id: str) -> bool:
         query = """mutation($input: ProjectFeatureFlagToggleInput!) { projectFeatureFlagAdd(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ProjectFeatureFlagToggleInput(flag=flag, project_id=project_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("projectFeatureFlagAdd")
 
-    def project_feature_flag_remove(self, input: "ProjectFeatureFlagToggleInput") -> bool:
+    def project_feature_flag_remove(self, flag: "ActiveProjectFeatureFlag", project_id: str) -> bool:
         query = """mutation($input: ProjectFeatureFlagToggleInput!) { projectFeatureFlagRemove(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ProjectFeatureFlagToggleInput(flag=flag, project_id=project_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("projectFeatureFlagRemove")
@@ -1856,11 +1862,11 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return ProjectPermission.model_validate(self._execute(query, variables).get("projectInvitationAccept"))
 
-    def project_invitation_create(self, id: str, input: "ProjectInvitee") -> "ProjectInvitation":
+    def project_invitation_create(self, id: str, email: str, role: "ProjectRole") -> "ProjectInvitation":
         query = """mutation($id: String!, $input: ProjectInvitee!) { projectInvitationCreate(id: $id, input: $input) { email expiresAt id isExpired inviter { email name } project { id name } } }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(ProjectInvitee(email=email, role=role)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return ProjectInvitation.model_validate(self._execute(query, variables).get("projectInvitationCreate"))
@@ -1881,11 +1887,11 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return ProjectInvitation.model_validate(self._execute(query, variables).get("projectInvitationResend"))
 
-    def project_invite_user(self, id: str, input: "ProjectInviteUserInput") -> bool:
+    def project_invite_user(self, id: str, email: str, link: str) -> bool:
         query = """mutation($id: String!, $input: ProjectInviteUserInput!) { projectInviteUser(id: $id, input: $input) }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(ProjectInviteUserInput(email=email, link=link)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("projectInviteUser")
@@ -1898,27 +1904,27 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("projectLeave")
 
-    def project_member_add(self, input: "ProjectMemberAddInput") -> "ProjectMember":
+    def project_member_add(self, project_id: str, role: "ProjectRole", user_id: str) -> "ProjectMember":
         query = """mutation($input: ProjectMemberAddInput!) { projectMemberAdd(input: $input) { avatar email id name } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ProjectMemberAddInput(project_id=project_id, role=role, user_id=user_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return ProjectMember.model_validate(self._execute(query, variables).get("projectMemberAdd"))
 
-    def project_member_remove(self, input: "ProjectMemberRemoveInput") -> list["ProjectMember"]:
+    def project_member_remove(self, project_id: str, user_id: str) -> list["ProjectMember"]:
         query = """mutation($input: ProjectMemberRemoveInput!) { projectMemberRemove(input: $input) { avatar email id name } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ProjectMemberRemoveInput(project_id=project_id, user_id=user_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         _data = self._execute(query, variables).get("projectMemberRemove")
         return TypeAdapter(list["ProjectMember"]).validate_python(_data) if _data else []
 
-    def project_member_update(self, input: "ProjectMemberUpdateInput") -> "ProjectMember":
+    def project_member_update(self, project_id: str, role: "ProjectRole", user_id: str) -> "ProjectMember":
         query = """mutation($input: ProjectMemberUpdateInput!) { projectMemberUpdate(input: $input) { avatar email id name } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ProjectMemberUpdateInput(project_id=project_id, role=role, user_id=user_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return ProjectMember.model_validate(self._execute(query, variables).get("projectMemberUpdate"))
@@ -1947,10 +1953,10 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("projectScheduleDeleteForce")
 
-    def project_token_create(self, input: "ProjectTokenCreateInput") -> str:
+    def project_token_create(self, environment_id: str, name: str, project_id: str) -> str:
         query = """mutation($input: ProjectTokenCreateInput!) { projectTokenCreate(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ProjectTokenCreateInput(environment_id=environment_id, name=name, project_id=project_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("projectTokenCreate")
@@ -1963,45 +1969,45 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("projectTokenDelete")
 
-    def project_transfer(self, input: "ProjectTransferInput", project_id: str) -> bool:
+    def project_transfer(self, workspace_id: str, project_id: str) -> bool:
         query = """mutation($input: ProjectTransferInput!, $projectId: String!) { projectTransfer(input: $input, projectId: $projectId) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ProjectTransferInput(workspace_id=workspace_id)),
             "projectId": _prepare_input(project_id),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("projectTransfer")
 
-    def project_transfer_confirm(self, input: "ProjectTransferConfirmInput") -> bool:
+    def project_transfer_confirm(self, ownership_transfer_id: str, project_id: str, *, destination_workspace_id: Optional[str] = None) -> bool:
         query = """mutation($input: ProjectTransferConfirmInput!) { projectTransferConfirm(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ProjectTransferConfirmInput(destination_workspace_id=destination_workspace_id, ownership_transfer_id=ownership_transfer_id, project_id=project_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("projectTransferConfirm")
 
-    def project_transfer_initiate(self, input: "ProjectTransferInitiateInput") -> bool:
+    def project_transfer_initiate(self, member_id: str, project_id: str) -> bool:
         query = """mutation($input: ProjectTransferInitiateInput!) { projectTransferInitiate(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ProjectTransferInitiateInput(member_id=member_id, project_id=project_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("projectTransferInitiate")
 
-    def project_transfer_to_team(self, id: str, input: "ProjectTransferToTeamInput") -> bool:
+    def project_transfer_to_team(self, id: str, team_id: str) -> bool:
         query = """mutation($id: String!, $input: ProjectTransferToTeamInput!) { projectTransferToTeam(id: $id, input: $input) }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(ProjectTransferToTeamInput(team_id=team_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("projectTransferToTeam")
 
-    def project_update(self, id: str, input: "ProjectUpdateInput") -> "Project":
+    def project_update(self, id: str, *, base_environment_id: Optional[str] = None, bot_pr_environments: Optional[bool] = None, description: Optional[str] = None, focused_pr_environments: Optional[bool] = None, is_public: Optional[bool] = None, name: Optional[str] = None, pr_deploys: Optional[bool] = None) -> "Project":
         query = """mutation($id: String!, $input: ProjectUpdateInput!) { projectUpdate(id: $id, input: $input) { baseEnvironmentId botPrEnvironments createdAt deletedAt description expiredAt focusedPrEnvironments id isPublic isTempProject name prDeploys subscriptionPlanLimit teamId updatedAt workspaceId baseEnvironment { canAccess createdAt deletedAt id isEphemeral name projectId unmergedChangesCount updatedAt } members { avatar email id name } team { adoptionLevel avatar createdAt id name preferredRegion slackChannelId updatedAt } workspace { adoptionLevel allowDeprecatedRegions avatar banReason createdAt discordRole has2FAEnforcement hasGuardrailsAccess hasSAML id name preferredRegion redactedDueTo2FAPending slackChannelId subscriptionPlanLimit updatedAt usersWithout2FA } } }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(ProjectUpdateInput(base_environment_id=base_environment_id, bot_pr_environments=bot_pr_environments, description=description, focused_pr_environments=focused_pr_environments, is_public=is_public, name=name, pr_deploys=pr_deploys)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Project.model_validate(self._execute(query, variables).get("projectUpdate"))
@@ -2018,35 +2024,35 @@ class RailwayClient:
         query = """mutation { recoveryCodeGenerate { recoveryCodes } }"""
         return RecoveryCodes.model_validate(self._execute(query).get("recoveryCodeGenerate"))
 
-    def recovery_code_validate(self, input: "RecoveryCodeValidateInput") -> bool:
+    def recovery_code_validate(self, code: str, *, two_factor_linking_key: Optional[str] = None) -> bool:
         query = """mutation($input: RecoveryCodeValidateInput!) { recoveryCodeValidate(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(RecoveryCodeValidateInput(code=code, two_factor_linking_key=two_factor_linking_key)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("recoveryCodeValidate")
 
-    def referral_info_update(self, input: "ReferralInfoUpdateInput") -> "ReferralInfo":
+    def referral_info_update(self, code: str, workspace_id: str) -> "ReferralInfo":
         query = """mutation($input: ReferralInfoUpdateInput!) { referralInfoUpdate(input: $input) { code id status referralStats { credited pending } } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ReferralInfoUpdateInput(code=code, workspace_id=workspace_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return ReferralInfo.model_validate(self._execute(query, variables).get("referralInfoUpdate"))
 
-    def service_connect(self, id: str, input: "ServiceConnectInput") -> "Service":
+    def service_connect(self, id: str, *, branch: Optional[str] = None, image: Optional[str] = None, repo: Optional[str] = None) -> "Service":
         query = """mutation($id: String!, $input: ServiceConnectInput!) { serviceConnect(id: $id, input: $input) { createdAt deletedAt hasHiddenRegistryCredentialsFromTemplate icon id name projectId templateId templateServiceId templateThreadSlug updatedAt project { baseEnvironmentId botPrEnvironments createdAt deletedAt description expiredAt focusedPrEnvironments id isPublic isTempProject name prDeploys subscriptionPlanLimit teamId updatedAt workspaceId } } }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(ServiceConnectInput(branch=branch, image=image, repo=repo)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Service.model_validate(self._execute(query, variables).get("serviceConnect"))
 
-    def service_create(self, input: "ServiceCreateInput") -> "Service":
+    def service_create(self, project_id: str, *, branch: Optional[str] = None, environment_id: Optional[str] = None, icon: Optional[str] = None, name: Optional[str] = None, registry_credentials: Optional["RegistryCredentialsInput"] = None, source: Optional["ServiceSourceInput"] = None, template_id: Optional[str] = None, template_service_id: Optional[str] = None, variables: Optional[Any] = None) -> "Service":
         query = """mutation($input: ServiceCreateInput!) { serviceCreate(input: $input) { createdAt deletedAt hasHiddenRegistryCredentialsFromTemplate icon id name projectId templateId templateServiceId templateThreadSlug updatedAt project { baseEnvironmentId botPrEnvironments createdAt deletedAt description expiredAt focusedPrEnvironments id isPublic isTempProject name prDeploys subscriptionPlanLimit teamId updatedAt workspaceId } } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ServiceCreateInput(branch=branch, environment_id=environment_id, icon=icon, name=name, project_id=project_id, registry_credentials=registry_credentials, source=source, template_id=template_id, template_service_id=template_service_id, variables=variables)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Service.model_validate(self._execute(query, variables).get("serviceCreate"))
@@ -2068,10 +2074,10 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return Service.model_validate(self._execute(query, variables).get("serviceDisconnect"))
 
-    def service_domain_create(self, input: "ServiceDomainCreateInput") -> "ServiceDomain":
+    def service_domain_create(self, environment_id: str, service_id: str, *, target_port: Optional[int] = None) -> "ServiceDomain":
         query = """mutation($input: ServiceDomainCreateInput!) { serviceDomainCreate(input: $input) { cdnMode createdAt deletedAt domain edgeId environmentId id newDomainName newHostLabel projectId serviceId suffix targetPort updatedAt } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ServiceDomainCreateInput(environment_id=environment_id, service_id=service_id, target_port=target_port)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return ServiceDomain.model_validate(self._execute(query, variables).get("serviceDomainCreate"))
@@ -2084,10 +2090,10 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("serviceDomainDelete")
 
-    def service_domain_update(self, input: "ServiceDomainUpdateInput") -> bool:
+    def service_domain_update(self, domain: str, environment_id: str, service_domain_id: str, service_id: str, *, target_port: Optional[int] = None) -> bool:
         query = """mutation($input: ServiceDomainUpdateInput!) { serviceDomainUpdate(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ServiceDomainUpdateInput(domain=domain, environment_id=environment_id, service_domain_id=service_domain_id, service_id=service_id, target_port=target_port)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("serviceDomainUpdate")
@@ -2101,18 +2107,18 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return Service.model_validate(self._execute(query, variables).get("serviceDuplicate"))
 
-    def service_feature_flag_add(self, input: "ServiceFeatureFlagToggleInput") -> bool:
+    def service_feature_flag_add(self, flag: "ActiveServiceFeatureFlag", service_id: str) -> bool:
         query = """mutation($input: ServiceFeatureFlagToggleInput!) { serviceFeatureFlagAdd(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ServiceFeatureFlagToggleInput(flag=flag, service_id=service_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("serviceFeatureFlagAdd")
 
-    def service_feature_flag_remove(self, input: "ServiceFeatureFlagToggleInput") -> bool:
+    def service_feature_flag_remove(self, flag: "ActiveServiceFeatureFlag", service_id: str) -> bool:
         query = """mutation($input: ServiceFeatureFlagToggleInput!) { serviceFeatureFlagRemove(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ServiceFeatureFlagToggleInput(flag=flag, service_id=service_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("serviceFeatureFlagRemove")
@@ -2138,10 +2144,10 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("serviceInstanceDeployV2")
 
-    def service_instance_limits_update(self, input: "ServiceInstanceLimitsUpdateInput") -> bool:
+    def service_instance_limits_update(self, environment_id: str, service_id: str, *, memory_gb: Optional[float] = None, v_cp_us: Optional[float] = None) -> bool:
         query = """mutation($input: ServiceInstanceLimitsUpdateInput!) { serviceInstanceLimitsUpdate(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(ServiceInstanceLimitsUpdateInput(environment_id=environment_id, memory_gb=memory_gb, service_id=service_id, v_cp_us=v_cp_us)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("serviceInstanceLimitsUpdate")
@@ -2155,11 +2161,11 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("serviceInstanceRedeploy")
 
-    def service_instance_update(self, input: "ServiceInstanceUpdateInput", service_id: str, *, environment_id: Optional[str] = None) -> bool:
+    def service_instance_update(self, service_id: str, *, environment_id: Optional[str] = None, build_command: Optional[str] = None, builder: Optional["Builder"] = None, cron_schedule: Optional[str] = None, dockerfile_path: Optional[str] = None, draining_seconds: Optional[int] = None, healthcheck_path: Optional[str] = None, healthcheck_timeout: Optional[int] = None, ipv6_egress_enabled: Optional[bool] = None, multi_region_config: Optional[Any] = None, nixpacks_plan: Optional[Any] = None, num_replicas: Optional[int] = None, overlap_seconds: Optional[int] = None, pre_deploy_command: Optional[list[str]] = None, railway_config_file: Optional[str] = None, region: Optional[str] = None, registry_credentials: Optional["RegistryCredentialsInput"] = None, restart_policy_max_retries: Optional[int] = None, restart_policy_type: Optional["RestartPolicyType"] = None, root_directory: Optional[str] = None, sleep_application: Optional[bool] = None, source: Optional["ServiceSourceInput"] = None, start_command: Optional[str] = None, watch_patterns: Optional[list[str]] = None) -> bool:
         query = """mutation($environmentId: String, $input: ServiceInstanceUpdateInput!, $serviceId: String!) { serviceInstanceUpdate(environmentId: $environmentId, input: $input, serviceId: $serviceId) }"""
         variables: dict[str, Any] = {
             "environmentId": _prepare_input(environment_id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(ServiceInstanceUpdateInput(build_command=build_command, builder=builder, cron_schedule=cron_schedule, dockerfile_path=dockerfile_path, draining_seconds=draining_seconds, healthcheck_path=healthcheck_path, healthcheck_timeout=healthcheck_timeout, ipv6_egress_enabled=ipv6_egress_enabled, multi_region_config=multi_region_config, nixpacks_plan=nixpacks_plan, num_replicas=num_replicas, overlap_seconds=overlap_seconds, pre_deploy_command=pre_deploy_command, railway_config_file=railway_config_file, region=region, registry_credentials=registry_credentials, restart_policy_max_retries=restart_policy_max_retries, restart_policy_type=restart_policy_type, root_directory=root_directory, sleep_application=sleep_application, source=source, start_command=start_command, watch_patterns=watch_patterns)),
             "serviceId": _prepare_input(service_id),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
@@ -2173,11 +2179,11 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return Service.model_validate(self._execute(query, variables).get("serviceRemoveUpstreamUrl"))
 
-    def service_update(self, id: str, input: "ServiceUpdateInput") -> "Service":
+    def service_update(self, id: str, *, icon: Optional[str] = None, name: Optional[str] = None) -> "Service":
         query = """mutation($id: String!, $input: ServiceUpdateInput!) { serviceUpdate(id: $id, input: $input) { createdAt deletedAt hasHiddenRegistryCredentialsFromTemplate icon id name projectId templateId templateServiceId templateThreadSlug updatedAt project { baseEnvironmentId botPrEnvironments createdAt deletedAt description expiredAt focusedPrEnvironments id isPublic isTempProject name prDeploys subscriptionPlanLimit teamId updatedAt workspaceId } } }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(ServiceUpdateInput(icon=icon, name=name)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Service.model_validate(self._execute(query, variables).get("serviceUpdate"))
@@ -2190,18 +2196,18 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("sessionDelete")
 
-    def shared_variable_configure(self, input: "SharedVariableConfigureInput") -> "Variable":
+    def shared_variable_configure(self, disabled_service_ids: list[str], enabled_service_ids: list[str], environment_id: str, name: str, project_id: str) -> "Variable":
         query = """mutation($input: SharedVariableConfigureInput!) { sharedVariableConfigure(input: $input) { createdAt environmentId id isSealed name pluginId references serviceId updatedAt environment { canAccess createdAt deletedAt id isEphemeral name projectId unmergedChangesCount updatedAt } plugin { createdAt deletedAt deprecatedAt friendlyName id logsEnabled migrationDatabaseServiceId } service { createdAt deletedAt hasHiddenRegistryCredentialsFromTemplate icon id name projectId templateId templateServiceId templateThreadSlug updatedAt } } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(SharedVariableConfigureInput(disabled_service_ids=disabled_service_ids, enabled_service_ids=enabled_service_ids, environment_id=environment_id, name=name, project_id=project_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Variable.model_validate(self._execute(query, variables).get("sharedVariableConfigure"))
 
-    def ssh_public_key_create(self, input: "SshPublicKeyCreateInput") -> "SshPublicKey":
+    def ssh_public_key_create(self, name: str, public_key: str) -> "SshPublicKey":
         query = """mutation($input: SshPublicKeyCreateInput!) { sshPublicKeyCreate(input: $input) { createdAt fingerprint id name publicKey updatedAt } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(SshPublicKeyCreateInput(name=name, public_key=public_key)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return SshPublicKey.model_validate(self._execute(query, variables).get("sshPublicKeyCreate"))
@@ -2214,10 +2220,10 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("sshPublicKeyDelete")
 
-    def tcp_proxy_create(self, input: "TCPProxyCreateInput") -> "TCPProxy":
+    def tcp_proxy_create(self, application_port: int, environment_id: str, service_id: str) -> "TCPProxy":
         query = """mutation($input: TCPProxyCreateInput!) { tcpProxyCreate(input: $input) { applicationPort createdAt deletedAt domain environmentId id proxyPort serviceId updatedAt } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(TCPProxyCreateInput(application_port=application_port, environment_id=environment_id, service_id=service_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return TCPProxy.model_validate(self._execute(query, variables).get("tcpProxyCreate"))
@@ -2230,60 +2236,60 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("tcpProxyDelete")
 
-    def template_clone(self, input: "TemplateCloneInput") -> "Template":
+    def template_clone(self, code: str, *, workspace_id: Optional[str] = None) -> "Template":
         query = """mutation($input: TemplateCloneInput!) { templateClone(input: $input) { activeProjects canvasConfig category code communityThreadSlug config createdAt demoProjectId description health id image isApproved isV2Template isVerified languages metadata name projects readme recentProjects serializedConfig supportHealthMetrics tags teamId totalPayout workspaceId creator { avatar hasPublicProfile name username } guides { post video } similarTemplates { code createdAt deploys description health image name teamId userId workspaceId } } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(TemplateCloneInput(code=code, workspace_id=workspace_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Template.model_validate(self._execute(query, variables).get("templateClone"))
 
-    def template_delete(self, id: str, input: "TemplateDeleteInput") -> bool:
+    def template_delete(self, id: str, *, workspace_id: Optional[str] = None) -> bool:
         query = """mutation($id: String!, $input: TemplateDeleteInput!) { templateDelete(id: $id, input: $input) }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(TemplateDeleteInput(workspace_id=workspace_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("templateDelete")
 
-    def template_deploy(self, input: "TemplateDeployInput") -> "TemplateDeployPayload":
+    def template_deploy(self, services: list["TemplateDeployService"], *, environment_id: Optional[str] = None, project_id: Optional[str] = None, template_code: Optional[str] = None, workspace_id: Optional[str] = None) -> "TemplateDeployPayload":
         query = """mutation($input: TemplateDeployInput!) { templateDeploy(input: $input) { projectId workflowId } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(TemplateDeployInput(environment_id=environment_id, project_id=project_id, services=services, template_code=template_code, workspace_id=workspace_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return TemplateDeployPayload.model_validate(self._execute(query, variables).get("templateDeploy"))
 
-    def template_deploy_v2(self, input: "TemplateDeployV2Input") -> "TemplateDeployPayload":
+    def template_deploy_v2(self, serialized_config: Any, template_id: str, *, environment_id: Optional[str] = None, project_id: Optional[str] = None, workspace_id: Optional[str] = None) -> "TemplateDeployPayload":
         query = """mutation($input: TemplateDeployV2Input!) { templateDeployV2(input: $input) { projectId workflowId } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(TemplateDeployV2Input(environment_id=environment_id, project_id=project_id, serialized_config=serialized_config, template_id=template_id, workspace_id=workspace_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return TemplateDeployPayload.model_validate(self._execute(query, variables).get("templateDeployV2"))
 
-    def template_generate(self, input: "TemplateGenerateInput") -> "Template":
+    def template_generate(self, project_id: str, *, environment_id: Optional[str] = None) -> "Template":
         query = """mutation($input: TemplateGenerateInput!) { templateGenerate(input: $input) { activeProjects canvasConfig category code communityThreadSlug config createdAt demoProjectId description health id image isApproved isV2Template isVerified languages metadata name projects readme recentProjects serializedConfig supportHealthMetrics tags teamId totalPayout workspaceId creator { avatar hasPublicProfile name username } guides { post video } similarTemplates { code createdAt deploys description health image name teamId userId workspaceId } } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(TemplateGenerateInput(environment_id=environment_id, project_id=project_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Template.model_validate(self._execute(query, variables).get("templateGenerate"))
 
-    def template_publish(self, id: str, input: "TemplatePublishInput") -> "Template":
+    def template_publish(self, id: str, category: str, description: str, readme: str, *, demo_project_id: Optional[str] = None, image: Optional[str] = None, workspace_id: Optional[str] = None) -> "Template":
         query = """mutation($id: String!, $input: TemplatePublishInput!) { templatePublish(id: $id, input: $input) { activeProjects canvasConfig category code communityThreadSlug config createdAt demoProjectId description health id image isApproved isV2Template isVerified languages metadata name projects readme recentProjects serializedConfig supportHealthMetrics tags teamId totalPayout workspaceId creator { avatar hasPublicProfile name username } guides { post video } similarTemplates { code createdAt deploys description health image name teamId userId workspaceId } } }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(TemplatePublishInput(category=category, demo_project_id=demo_project_id, description=description, image=image, readme=readme, workspace_id=workspace_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Template.model_validate(self._execute(query, variables).get("templatePublish"))
 
-    def template_service_source_eject(self, input: "TemplateServiceSourceEjectInput") -> bool:
+    def template_service_source_eject(self, project_id: str, repo_name: str, repo_owner: str, service_ids: list[str], upstream_url: str) -> bool:
         query = """mutation($input: TemplateServiceSourceEjectInput!) { templateServiceSourceEject(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(TemplateServiceSourceEjectInput(project_id=project_id, repo_name=repo_name, repo_owner=repo_owner, service_ids=service_ids, upstream_url=upstream_url)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("templateServiceSourceEject")
@@ -2296,10 +2302,10 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("templateUnpublish")
 
-    def trusted_domain_create(self, input: "WorkspaceTrustedDomainCreateInput") -> "TrustedDomain":
+    def trusted_domain_create(self, domain_name: str, role: str, workspace_id: str) -> "TrustedDomain":
         query = """mutation($input: WorkspaceTrustedDomainCreateInput!) { trustedDomainCreate(input: $input) { domainName id role verificationType workspaceId verificationData { dnsHost token } } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(WorkspaceTrustedDomainCreateInput(domain_name=domain_name, role=role, workspace_id=workspace_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return TrustedDomain.model_validate(self._execute(query, variables).get("trustedDomainCreate"))
@@ -2321,10 +2327,10 @@ class RailwayClient:
         _data = self._execute(query, variables).get("trustedDomainRetriggerVerification")
         return TrustedDomain.model_validate(_data) if _data else None
 
-    def two_factor_info_create(self, input: "TwoFactorInfoCreateInput") -> "RecoveryCodes":
+    def two_factor_info_create(self, token: str) -> "RecoveryCodes":
         query = """mutation($input: TwoFactorInfoCreateInput!) { twoFactorInfoCreate(input: $input) { recoveryCodes } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(TwoFactorInfoCreateInput(token=token)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return RecoveryCodes.model_validate(self._execute(query, variables).get("twoFactorInfoCreate"))
@@ -2337,10 +2343,10 @@ class RailwayClient:
         query = """mutation { twoFactorInfoSecret { secret uri } }"""
         return TwoFactorInfoSecret.model_validate(self._execute(query).get("twoFactorInfoSecret"))
 
-    def two_factor_info_validate(self, input: "TwoFactorInfoValidateInput") -> bool:
+    def two_factor_info_validate(self, token: str, *, two_factor_linking_key: Optional[str] = None) -> bool:
         query = """mutation($input: TwoFactorInfoValidateInput!) { twoFactorInfoValidate(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(TwoFactorInfoValidateInput(token=token, two_factor_linking_key=two_factor_linking_key)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("twoFactorInfoValidate")
@@ -2353,18 +2359,18 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("upsertSlackChannel")
 
-    def usage_limit_remove(self, input: "UsageLimitRemoveInput") -> bool:
+    def usage_limit_remove(self, customer_id: str) -> bool:
         query = """mutation($input: UsageLimitRemoveInput!) { usageLimitRemove(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(UsageLimitRemoveInput(customer_id=customer_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("usageLimitRemove")
 
-    def usage_limit_set(self, input: "UsageLimitSetInput") -> bool:
+    def usage_limit_set(self, customer_id: str, soft_limit_dollars: int, *, hard_limit_dollars: Optional[int] = None) -> bool:
         query = """mutation($input: UsageLimitSetInput!) { usageLimitSet(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(UsageLimitSetInput(customer_id=customer_id, hard_limit_dollars=hard_limit_dollars, soft_limit_dollars=soft_limit_dollars)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("usageLimitSet")
@@ -2381,26 +2387,26 @@ class RailwayClient:
         query = """mutation { userDiscordDisconnect }"""
         return self._execute(query).get("userDiscordDisconnect")
 
-    def user_flags_remove(self, input: "UserFlagsRemoveInput") -> bool:
+    def user_flags_remove(self, flags: list["UserFlag"], *, user_id: Optional[str] = None) -> bool:
         query = """mutation($input: UserFlagsRemoveInput!) { userFlagsRemove(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(UserFlagsRemoveInput(flags=flags, user_id=user_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("userFlagsRemove")
 
-    def user_flags_set(self, input: "UserFlagsSetInput") -> bool:
+    def user_flags_set(self, flags: list["UserFlag"], *, user_id: Optional[str] = None) -> bool:
         query = """mutation($input: UserFlagsSetInput!) { userFlagsSet(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(UserFlagsSetInput(flags=flags, user_id=user_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("userFlagsSet")
 
-    def user_profile_update(self, input: "UserProfileUpdateInput") -> bool:
+    def user_profile_update(self, is_public: bool, *, bio: Optional[str] = None, website: Optional[str] = None) -> bool:
         query = """mutation($input: UserProfileUpdateInput!) { userProfileUpdate(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(UserProfileUpdateInput(bio=bio, is_public=is_public, website=website)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("userProfileUpdate")
@@ -2410,34 +2416,34 @@ class RailwayClient:
         _data = self._execute(query).get("userTermsUpdate")
         return User.model_validate(_data) if _data else None
 
-    def variable_collection_upsert(self, input: "VariableCollectionUpsertInput") -> bool:
+    def variable_collection_upsert(self, environment_id: str, project_id: str, variables: Any, *, replace: Optional[bool] = None, service_id: Optional[str] = None, skip_deploys: Optional[bool] = None) -> bool:
         query = """mutation($input: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(VariableCollectionUpsertInput(environment_id=environment_id, project_id=project_id, replace=replace, service_id=service_id, skip_deploys=skip_deploys, variables=variables)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("variableCollectionUpsert")
 
-    def variable_delete(self, input: "VariableDeleteInput") -> bool:
+    def variable_delete(self, environment_id: str, name: str, project_id: str, *, service_id: Optional[str] = None) -> bool:
         query = """mutation($input: VariableDeleteInput!) { variableDelete(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(VariableDeleteInput(environment_id=environment_id, name=name, project_id=project_id, service_id=service_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("variableDelete")
 
-    def variable_upsert(self, input: "VariableUpsertInput") -> bool:
+    def variable_upsert(self, environment_id: str, name: str, project_id: str, value: str, *, service_id: Optional[str] = None, skip_deploys: Optional[bool] = None) -> bool:
         query = """mutation($input: VariableUpsertInput!) { variableUpsert(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(VariableUpsertInput(environment_id=environment_id, name=name, project_id=project_id, service_id=service_id, skip_deploys=skip_deploys, value=value)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("variableUpsert")
 
-    def volume_create(self, input: "VolumeCreateInput") -> "Volume":
+    def volume_create(self, mount_path: str, project_id: str, *, environment_id: Optional[str] = None, region: Optional[str] = None, service_id: Optional[str] = None) -> "Volume":
         query = """mutation($input: VolumeCreateInput!) { volumeCreate(input: $input) { createdAt id name projectId project { baseEnvironmentId botPrEnvironments createdAt deletedAt description expiredAt focusedPrEnvironments id isPublic isTempProject name prDeploys subscriptionPlanLimit teamId updatedAt workspaceId } } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(VolumeCreateInput(environment_id=environment_id, mount_path=mount_path, project_id=project_id, region=region, service_id=service_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return Volume.model_validate(self._execute(query, variables).get("volumeCreate"))
@@ -2495,20 +2501,20 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("volumeInstanceBackupScheduleUpdate")
 
-    def volume_instance_update(self, input: "VolumeInstanceUpdateInput", volume_id: str, *, environment_id: Optional[str] = None) -> bool:
+    def volume_instance_update(self, volume_id: str, *, environment_id: Optional[str] = None, mount_path: Optional[str] = None, service_id: Optional[str] = None, state: Optional["VolumeState"] = None) -> bool:
         query = """mutation($environmentId: String, $input: VolumeInstanceUpdateInput!, $volumeId: String!) { volumeInstanceUpdate(environmentId: $environmentId, input: $input, volumeId: $volumeId) }"""
         variables: dict[str, Any] = {
             "environmentId": _prepare_input(environment_id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(VolumeInstanceUpdateInput(mount_path=mount_path, service_id=service_id, state=state)),
             "volumeId": _prepare_input(volume_id),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("volumeInstanceUpdate")
 
-    def volume_update(self, input: "VolumeUpdateInput", volume_id: str) -> "Volume":
+    def volume_update(self, volume_id: str, *, name: Optional[str] = None) -> "Volume":
         query = """mutation($input: VolumeUpdateInput!, $volumeId: String!) { volumeUpdate(input: $input, volumeId: $volumeId) { createdAt id name projectId project { baseEnvironmentId botPrEnvironments createdAt deletedAt description expiredAt focusedPrEnvironments id isPublic isTempProject name prDeploys subscriptionPlanLimit teamId updatedAt workspaceId } } }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(VolumeUpdateInput(name=name)),
             "volumeId": _prepare_input(volume_id),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
@@ -2531,10 +2537,10 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("workspaceDelete")
 
-    def workspace_invite_code_create(self, input: "WorkspaceInviteCodeCreateInput", workspace_id: str) -> str:
+    def workspace_invite_code_create(self, role: str, workspace_id: str) -> str:
         query = """mutation($input: WorkspaceInviteCodeCreateInput!, $workspaceId: String!) { workspaceInviteCodeCreate(input: $input, workspaceId: $workspaceId) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(WorkspaceInviteCodeCreateInput(role=role)),
             "workspaceId": _prepare_input(workspace_id),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
@@ -2556,10 +2562,10 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("workspaceLeave")
 
-    def workspace_permission_change(self, input: "WorkspacePermissionChangeInput") -> bool:
+    def workspace_permission_change(self, role: "TeamRole", user_id: str, workspace_id: str) -> bool:
         query = """mutation($input: WorkspacePermissionChangeInput!) { workspacePermissionChange(input: $input) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(WorkspacePermissionChangeInput(role=role, user_id=user_id, workspace_id=workspace_id)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("workspacePermissionChange")
@@ -2584,11 +2590,11 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("workspaceTwoFactorEnforcementUpdate")
 
-    def workspace_update(self, id: str, input: "WorkspaceUpdateInput") -> bool:
+    def workspace_update(self, id: str, *, avatar: Optional[str] = None, name: Optional[str] = None, preferred_region: Optional[str] = None) -> bool:
         query = """mutation($id: String!, $input: WorkspaceUpdateInput!) { workspaceUpdate(id: $id, input: $input) }"""
         variables: dict[str, Any] = {
             "id": _prepare_input(id),
-            "input": _prepare_input(input),
+            "input": _prepare_input(WorkspaceUpdateInput(avatar=avatar, name=name, preferred_region=preferred_region)),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("workspaceUpdate")
@@ -2601,19 +2607,19 @@ class RailwayClient:
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("workspaceUpsertSlackChannel")
 
-    def workspace_user_invite(self, input: "WorkspaceUserInviteInput", workspace_id: str) -> bool:
+    def workspace_user_invite(self, code: str, email: str, workspace_id: str) -> bool:
         query = """mutation($input: WorkspaceUserInviteInput!, $workspaceId: String!) { workspaceUserInvite(input: $input, workspaceId: $workspaceId) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(WorkspaceUserInviteInput(code=code, email=email)),
             "workspaceId": _prepare_input(workspace_id),
         }
         variables = {k: v for k, v in variables.items() if v is not None}
         return self._execute(query, variables).get("workspaceUserInvite")
 
-    def workspace_user_remove(self, input: "WorkspaceUserRemoveInput", workspace_id: str) -> bool:
+    def workspace_user_remove(self, user_id: str, workspace_id: str) -> bool:
         query = """mutation($input: WorkspaceUserRemoveInput!, $workspaceId: String!) { workspaceUserRemove(input: $input, workspaceId: $workspaceId) }"""
         variables: dict[str, Any] = {
-            "input": _prepare_input(input),
+            "input": _prepare_input(WorkspaceUserRemoveInput(user_id=user_id)),
             "workspaceId": _prepare_input(workspace_id),
         }
         variables = {k: v for k, v in variables.items() if v is not None}

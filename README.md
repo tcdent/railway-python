@@ -13,9 +13,9 @@ pip install railway-python
 ## Quick Start
 
 ```python
-from railway import RailwayClient, ProjectCreateInput
+from railway import RailwayClient
 
-client = RailwayClient("your-api-token")
+client = RailwayClient(api_token="your-api-token")
 
 # Get current user — returns a Pydantic model, not a raw dict
 user = client.me()
@@ -26,11 +26,8 @@ projects = client.projects()
 for edge in projects.edges:
     print(edge.node.name)
 
-# Create a project — inputs are Pydantic models with snake_case fields
-project = client.project_create(ProjectCreateInput(
-    name="my-app",
-    workspace_id="your-workspace-id",
-))
+# Create a project — input fields are expanded as kwargs
+project = client.project_create(name="my-app", workspace_id="your-workspace-id")
 print(project.id, project.name)
 
 # Get variables for a service
@@ -46,13 +43,13 @@ All response types are [Pydantic](https://docs.pydantic.dev/) models with snake_
 ### Project Token Authentication
 
 ```python
-client = RailwayClient("project-token", is_project_token=True)
+client = RailwayClient(project_token="your-project-token")
 ```
 
 ### Context Manager
 
 ```python
-with RailwayClient("token") as client:
+with RailwayClient(api_token="token") as client:
     me = client.me()
     print(me.name)
 ```
@@ -71,7 +68,7 @@ data = client._execute("""
 
 ## API Reference
 
-All methods return fully typed Pydantic models. Response fields are accessed via snake_case attributes (e.g. `project.base_environment_id`). Input types are constructed with snake_case and automatically serialized to camelCase for GraphQL.
+All methods return fully typed Pydantic models. Response fields are accessed via snake_case attributes (e.g. `project.base_environment_id`). Mutations that take an `input` argument have their fields expanded as kwargs — no need to import input types.
 
 ### Queries
 

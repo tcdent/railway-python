@@ -353,27 +353,33 @@ def gen_client(types: list[dict], schema: dict) -> str:
         "",
         "    def __init__(",
         "        self,",
-        "        token: str,",
         "        *,",
+        "        api_token: str | None = None,",
+        "        project_token: str | None = None,",
         "        endpoint: str | None = None,",
         "        timeout: float = 30.0,",
-        "        is_project_token: bool = False,",
         "    ):",
         '        """',
         "        Create a new Railway API client.",
         "",
+        "        Provide exactly one of api_token or project_token.",
+        "",
         "        Args:",
-        "            token: Railway API token (account, workspace, or project token).",
+        "            api_token: Railway API token (account or workspace scope).",
+        "            project_token: Railway project-scoped token.",
         "            endpoint: Override the default API endpoint.",
         "            timeout: Request timeout in seconds.",
-        "            is_project_token: Set True when using a project-scoped token.",
         '        """',
+        "        if api_token and project_token:",
+        '            raise ValueError("Provide exactly one of api_token or project_token, not both.")',
+        "        if not api_token and not project_token:",
+        '            raise ValueError("Provide either api_token or project_token.")',
         "        self._endpoint = endpoint or self.ENDPOINT",
         "        self._timeout = timeout",
-        "        if is_project_token:",
-        '            self._headers = {"Content-Type": "application/json", "Project-Access-Token": token}',
+        "        if project_token:",
+        '            self._headers = {"Content-Type": "application/json", "Project-Access-Token": project_token}',
         "        else:",
-        '            self._headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}',
+        '            self._headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_token}"}',
         "        self._client = httpx.Client(timeout=timeout)",
         "",
         "    def close(self) -> None:",
@@ -417,6 +423,14 @@ def gen_client(types: list[dict], schema: dict) -> str:
     return "\n".join(lines)
 
 
+def _is_input_object(type_ref: dict, types_by_name: dict) -> str | None:
+    """If type_ref resolves to an INPUT_OBJECT, return its name; else None."""
+    name = _unwrap_type_name(type_ref)
+    if name and name in types_by_name and types_by_name[name]["kind"] == "INPUT_OBJECT":
+        return name
+    return None
+
+
 def _gen_method(lines: list[str], f: dict, op_type: str, types_by_name: dict) -> None:
     name = f["name"]  # original camelCase GraphQL name
     method_name = safe_name(name)
@@ -426,24 +440,63 @@ def _gen_method(lines: list[str], f: dict, op_type: str, types_by_name: dict) ->
     # Build default field selection for the return type
     selection = _build_default_fields(types_by_name, f["type"])
 
-    # Build method signature
-    params = ["self"]
-    required_args = []
-    optional_args = []
+    # Classify args: expand INPUT_OBJECT args into kwargs, keep scalars as-is
+    required_params: list[tuple[str, str, str, str | None]] = []  # (py, gql, type, input_cls)
+    optional_params: list[tuple[str, str, str, str | None]] = []
+    # Track which GraphQL args are expanded inputs so we can construct them in the body
+    expanded_inputs: dict[str, tuple[str, list]] = {}  # gql_arg_name -> (InputClassName, [(py_name, gql_field_name, is_optional)])
+
+    # First pass: collect all non-input arg names to detect collisions
+    scalar_arg_names = set()
+    for a in args:
+        input_cls = _is_input_object(a["type"], types_by_name)
+        if not input_cls:
+            scalar_arg_names.add(safe_name(a["name"]))
+
     for a in args:
         aname = safe_name(a["name"])
         atype, anullable = resolve_type(a["type"])
-        if anullable:
-            optional_args.append((aname, a["name"], atype))
-        else:
-            required_args.append((aname, a["name"], atype))
+        input_cls = _is_input_object(a["type"], types_by_name)
 
-    for aname, orig, atype in required_args:
-        params.append(f"{aname}: {atype}")
-    if optional_args:
+        if input_cls:
+            # Check for name collisions between input fields and other args
+            input_type = types_by_name[input_cls]
+            input_fields = input_type.get("inputFields") or []
+            field_names = {safe_name(inf["name"]) for inf in input_fields}
+            has_collision = bool(field_names & scalar_arg_names)
+
+            if has_collision:
+                # Fall back to keeping the input as a typed arg
+                if anullable:
+                    optional_params.append((aname, a["name"], atype, None))
+                else:
+                    required_params.append((aname, a["name"], atype, None))
+            else:
+                # Expand this input's fields into the method signature
+                expanded_fields = []
+                for inf in input_fields:
+                    inf_name = safe_name(inf["name"])
+                    inf_type, inf_nullable = resolve_type(inf["type"])
+                    expanded_fields.append((inf_name, inf["name"], inf_nullable))
+                    if inf_nullable:
+                        optional_params.append((inf_name, inf["name"], inf_type, input_cls))
+                    else:
+                        required_params.append((inf_name, inf["name"], inf_type, input_cls))
+                expanded_inputs[a["name"]] = (input_cls, expanded_fields)
+        else:
+            if anullable:
+                optional_params.append((aname, a["name"], atype, None))
+            else:
+                required_params.append((aname, a["name"], atype, None))
+
+    # Build method signature
+    params = ["self"]
+    for py_name, gql_name, py_type, _ in required_params:
+        params.append(f"{py_name}: {py_type}")
+    if optional_params:
         params.append("*")
-        for aname, orig, atype in optional_args:
-            params.append(f"{aname}: Optional[{atype}] = None")
+        for py_name, gql_name, py_type, _ in optional_params:
+            params.append(f"{py_name}: Optional[{py_type}] = None")
 
     sig = ", ".join(params)
     if ret_nullable:
@@ -477,11 +530,17 @@ def _gen_method(lines: list[str], f: dict, op_type: str, types_by_name: dict) ->
 
     lines.append(f'        query = """{gql}"""')
 
-    # Build variables dict — keys are already camelCase (the original GraphQL names)
+    # Build variables dict
     var_entries = []
     for a in args:
-        aname = safe_name(a["name"])
-        var_entries.append(f'"{a["name"]}": _prepare_input({aname})')
+        if a["name"] in expanded_inputs:
+            # Construct the input object from expanded kwargs
+            input_cls, fields = expanded_inputs[a["name"]]
+            field_assignments = ", ".join(f"{safe_name(gql_f)}={safe_name(gql_f)}" for _, gql_f, _ in fields)
+            var_entries.append(f'"{a["name"]}": _prepare_input({input_cls}({field_assignments}))')
+        else:
+            aname = safe_name(a["name"])
+            var_entries.append(f'"{a["name"]}": _prepare_input({aname})')
 
     # Determine how to handle the return value
     is_scalar = _is_scalar_return(f["type"])

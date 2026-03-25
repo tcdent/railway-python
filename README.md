@@ -7,7 +7,7 @@ Railway doesn't publish an official Python SDK, but they do expose a complete Gr
 ## Install
 
 ```bash
-pip install railway-python
+uv add railway-client
 ```
 
 ## Quick Start

@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "railway-python"
+name = "railway-client"
 version = "0.1.0"
 description = "Fully typed Python client for the Railway GraphQL API"
 readme = "README.md"

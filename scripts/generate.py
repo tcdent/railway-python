@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Code generator that reads the Railway GraphQL introspection schema
-and produces fully-typed Python dataclasses + a thin client wrapper.
+and produces fully-typed Pydantic models + a thin client wrapper.
 """
 
 from __future__ import annotations
@@ -10,7 +10,6 @@ import json
 import keyword
 import re
 import sys
-import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -23,16 +22,33 @@ SCALAR_MAP: dict[str, str] = {
     "Boolean": "bool",
     "ID": "str",
     "DateTime": "str",
-    "JSON": "Any",
     "Date": "str",
+    "JSON": "Any",
     "Upload": "Any",
     "BigInt": "int",
     "Void": "None",
+    # Custom Railway scalars — all opaque JSON values
     "CanvasConfig": "Any",
-    "ServiceVariables": "Any",
-    "SubscriptionPlanLimit": "Any",
+    "DeploymentDiagnosis": "Any",
+    "DeploymentMeta": "Any",
+    "DisplayConfig": "Any",
+    "EnvironmentConfig": "Any",
     "EnvironmentVariables": "Any",
     "HelpStationFormFields": "Any",
+    "NotificationChannelConfig": "Any",
+    "NotificationPayload": "Any",
+    "RailpackInfo": "Any",
+    "SerializedTemplateConfig": "Any",
+    "ServiceInstanceLimit": "Any",
+    "ServiceVariables": "Any",
+    "SkippedResourceIds": "Any",
+    "SpendCommitmentFeatureId": "Any",
+    "SubscriptionPlanLimit": "Any",
+    "SupportHealthMetrics": "Any",
+    "TemplateConfig": "Any",
+    "TemplateMetadata": "Any",
+    "TemplateServiceConfig": "Any",
+    "TemplateVolume": "Any",
 }
 
 
@@ -40,10 +56,7 @@ def snake(name: str) -> str:
     """camelCase / PascalCase → snake_case"""
     s = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", name)
     s = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s)
-    s = s.lower()
-    if keyword.iskeyword(s) or s in ("id", "type", "from", "input"):
-        pass  # keep as-is; we'll handle at call-sites
-    return s
+    return s.lower()
 
 
 def safe_name(name: str) -> str:
@@ -108,19 +121,30 @@ def gen_input_types(types: list[dict]) -> str:
     lines = [
         "from __future__ import annotations",
         "",
-        "from dataclasses import dataclass, field",
         "from typing import Any, Optional",
         "",
+        "from pydantic import BaseModel, ConfigDict",
+        "from pydantic.alias_generators import to_camel",
+        "",
         "from .enums import *  # noqa: F401,F403",
+        "",
+        "",
+        "class _Base(BaseModel):",
+        "    model_config = ConfigDict(",
+        "        alias_generator=to_camel,",
+        "        populate_by_name=True,",
+        "    )",
+        "",
         "",
     ]
     inputs = sorted(
         [t for t in types if t["kind"] == "INPUT_OBJECT" and not t["name"].startswith("__")],
         key=lambda t: t["name"],
     )
+    class_names = []
     for t in inputs:
-        lines.append("@dataclass")
-        lines.append(f"class {t['name']}:")
+        class_names.append(t["name"])
+        lines.append(f"class {t['name']}(_Base):")
         if t.get("description"):
             lines.append(f'    """{t["description"]}"""')
         required_fields = []
@@ -140,19 +164,46 @@ def gen_input_types(types: list[dict]) -> str:
             lines.append(f"    {fname}: Optional[{py_type}] = None")
         lines.append("")
         lines.append("")
-    return "\n".join(lines)
+
+    return "\n".join(lines), class_names
 
 
 def gen_object_types(types: list[dict]) -> str:
     lines = [
         "from __future__ import annotations",
         "",
-        "from dataclasses import dataclass, field",
         "from typing import Any, Optional",
+        "",
+        "from pydantic import BaseModel, ConfigDict",
+        "from pydantic.alias_generators import to_camel",
         "",
         "from .enums import *  # noqa: F401,F403",
         "",
+        "",
+        "class _Base(BaseModel):",
+        "    model_config = ConfigDict(",
+        "        alias_generator=to_camel,",
+        "        populate_by_name=True,",
+        "    )",
+        "",
+        "",
     ]
+    # Generate type aliases for unions and interfaces (resolved as Any)
+    unions_interfaces = sorted(
+        [t for t in types if t["kind"] in ("UNION", "INTERFACE") and not t["name"].startswith("__")],
+        key=lambda t: t["name"],
+    )
+    for t in unions_interfaces:
+        possible = t.get("possibleTypes") or []
+        if possible:
+            type_names = ", ".join(f'"{p["name"]}"' for p in possible)
+            lines.append(f"# {t['kind']}: {t['name']} = {type_names}")
+        lines.append(f"{t['name']} = Any")
+        lines.append("")
+
+    if unions_interfaces:
+        lines.append("")
+
     objects = sorted(
         [
             t
@@ -163,9 +214,10 @@ def gen_object_types(types: list[dict]) -> str:
         ],
         key=lambda t: t["name"],
     )
+    class_names = []
     for t in objects:
-        lines.append("@dataclass")
-        lines.append(f"class {t['name']}:")
+        class_names.append(t["name"])
+        lines.append(f"class {t['name']}(_Base):")
         if t.get("description"):
             lines.append(f'    """{t["description"]}"""')
         fields = t.get("fields") or []
@@ -174,28 +226,20 @@ def gen_object_types(types: list[dict]) -> str:
             lines.append("")
             lines.append("")
             continue
-        required_fields = []
-        optional_fields = []
+        # All response fields are Optional — GraphQL only returns selected fields
+        all_fields = []
         for f in fields:
-            if f.get("args"):
-                # Skip fields that require arguments (sub-queries / connections with args)
-                # We'll treat these as optional
-                py_type, _ = resolve_type(f["type"])
-                optional_fields.append((safe_name(f["name"]), f["name"], py_type, f.get("description")))
-                continue
-            py_type, nullable = resolve_type(f["type"])
+            py_type, _ = resolve_type(f["type"])
             fname = safe_name(f["name"])
-            if nullable:
-                optional_fields.append((fname, f["name"], py_type, f.get("description")))
-            else:
-                required_fields.append((fname, f["name"], py_type, f.get("description")))
-        for fname, orig, py_type, desc in required_fields:
-            lines.append(f"    {fname}: {py_type}")
-        for fname, orig, py_type, desc in optional_fields:
+            all_fields.append((fname, py_type))
+        if not all_fields:
+            lines.append("    pass")
+        for fname, py_type in all_fields:
             lines.append(f"    {fname}: Optional[{py_type}] = None")
         lines.append("")
         lines.append("")
-    return "\n".join(lines)
+
+    return "\n".join(lines), class_names
 
 
 def _build_default_fields(types_by_name: dict, type_ref: dict, depth: int = 0, visited: set | None = None) -> str:
@@ -209,7 +253,7 @@ def _build_default_fields(types_by_name: dict, type_ref: dict, depth: int = 0, v
 
     name = type_ref["name"]
     if name in SCALAR_MAP:
-        return ""  # scalar field - selected by name at parent level
+        return ""
 
     t = types_by_name.get(name)
     if not t or t["kind"] == "UNION" or t["kind"] == "INTERFACE":
@@ -226,7 +270,6 @@ def _build_default_fields(types_by_name: dict, type_ref: dict, depth: int = 0, v
         if f.get("args"):
             continue
         ftype = f["type"]
-        # Unwrap NON_NULL / LIST
         inner = ftype
         while inner["kind"] in ("NON_NULL", "LIST"):
             inner = inner["ofType"]
@@ -241,6 +284,27 @@ def _build_default_fields(types_by_name: dict, type_ref: dict, depth: int = 0, v
     return " ".join(all_fields)
 
 
+def _unwrap_type_name(type_ref: dict) -> str | None:
+    """Unwrap NON_NULL/LIST wrappers to get the base type name."""
+    while type_ref["kind"] in ("NON_NULL", "LIST"):
+        type_ref = type_ref["ofType"]
+    return type_ref.get("name")
+
+
+def _is_scalar_return(type_ref: dict) -> bool:
+    """Check if the return type is a scalar (not a model)."""
+    name = _unwrap_type_name(type_ref)
+    return name in SCALAR_MAP if name else True
+
+
+def _is_list_return(type_ref: dict) -> bool:
+    """Check if the return type is a list (unwrapping NON_NULL)."""
+    kind = type_ref["kind"]
+    if kind == "NON_NULL":
+        return _is_list_return(type_ref["ofType"])
+    return kind == "LIST"
+
+
 def gen_client(types: list[dict], schema: dict) -> str:
     types_by_name = {t["name"]: t for t in types}
     query_type = types_by_name.get("Query")
@@ -249,25 +313,24 @@ def gen_client(types: list[dict], schema: dict) -> str:
     lines = [
         "from __future__ import annotations",
         "",
-        "import json",
-        "from dataclasses import asdict, dataclass",
-        "from typing import Any, Optional, overload",
+        "from typing import Any, Optional",
         "",
         "import httpx",
+        "from pydantic import BaseModel, TypeAdapter",
         "",
         "from .enums import *  # noqa: F401,F403",
         "from .inputs import *  # noqa: F401,F403",
         "from .types import *  # noqa: F401,F403",
         "",
         "",
-        "def _clean_input(obj: Any) -> Any:",
-        '    """Recursively convert dataclasses to dicts and strip None values."""',
-        "    if hasattr(obj, '__dataclass_fields__'):",
-        "        return {k: _clean_input(v) for k, v in asdict(obj).items() if v is not None}",
+        "def _prepare_input(obj: Any) -> Any:",
+        '    """Recursively serialize inputs for GraphQL variables."""',
+        "    if isinstance(obj, BaseModel):",
+        "        return obj.model_dump(by_alias=True, exclude_none=True)",
         "    if isinstance(obj, dict):",
-        "        return {k: _clean_input(v) for k, v in obj.items() if v is not None}",
+        "        return {k: _prepare_input(v) for k, v in obj.items() if v is not None}",
         "    if isinstance(obj, list):",
-        "        return [_clean_input(v) for v in obj]",
+        "        return [_prepare_input(v) for v in obj]",
         "    if isinstance(obj, Enum):",
         "        return obj.value",
         "    return obj",
@@ -286,7 +349,7 @@ def gen_client(types: list[dict], schema: dict) -> str:
         "class RailwayClient:",
         '    """Typed Python client for the Railway GraphQL API (v2)."""',
         "",
-        "    ENDPOINT = \"https://backboard.railway.com/graphql/v2\"",
+        '    ENDPOINT = "https://backboard.railway.com/graphql/v2"',
         "",
         "    def __init__(",
         "        self,",
@@ -325,7 +388,7 @@ def gen_client(types: list[dict], schema: dict) -> str:
         "",
         "    def _execute(self, query: str, variables: dict[str, Any] | None = None) -> Any:",
         '        """Execute a raw GraphQL query and return the data dict."""',
-        "        payload: dict[str, Any] = {\"query\": query}",
+        '        payload: dict[str, Any] = {"query": query}',
         "        if variables:",
         '            payload["variables"] = variables',
         "        resp = self._client.post(self._endpoint, headers=self._headers, json=payload)",
@@ -355,7 +418,7 @@ def gen_client(types: list[dict], schema: dict) -> str:
 
 
 def _gen_method(lines: list[str], f: dict, op_type: str, types_by_name: dict) -> None:
-    name = f["name"]
+    name = f["name"]  # original camelCase GraphQL name
     method_name = safe_name(name)
     args = f.get("args") or []
     ret_type, ret_nullable = resolve_type(f["type"])
@@ -365,22 +428,21 @@ def _gen_method(lines: list[str], f: dict, op_type: str, types_by_name: dict) ->
 
     # Build method signature
     params = ["self"]
-    param_docs = []
     required_args = []
     optional_args = []
     for a in args:
         aname = safe_name(a["name"])
         atype, anullable = resolve_type(a["type"])
         if anullable:
-            optional_args.append((aname, a["name"], atype, a.get("description")))
+            optional_args.append((aname, a["name"], atype))
         else:
-            required_args.append((aname, a["name"], atype, a.get("description")))
+            required_args.append((aname, a["name"], atype))
 
-    for aname, orig, atype, desc in required_args:
+    for aname, orig, atype in required_args:
         params.append(f"{aname}: {atype}")
     if optional_args:
         params.append("*")
-        for aname, orig, atype, desc in optional_args:
+        for aname, orig, atype in optional_args:
             params.append(f"{aname}: Optional[{atype}] = None")
 
     sig = ", ".join(params)
@@ -413,13 +475,18 @@ def _gen_method(lines: list[str], f: dict, op_type: str, types_by_name: dict) ->
 
     gql = f"{op_type}{args_def_str} {{ {field_str} }}"
 
-    # Build variables dict
     lines.append(f'        query = """{gql}"""')
 
+    # Build variables dict — keys are already camelCase (the original GraphQL names)
     var_entries = []
     for a in args:
         aname = safe_name(a["name"])
-        var_entries.append(f'"{a["name"]}": _clean_input({aname})')
+        var_entries.append(f'"{a["name"]}": _prepare_input({aname})')
+
+    # Determine how to handle the return value
+    is_scalar = _is_scalar_return(f["type"])
+    is_list = _is_list_return(f["type"])
+    base_type_name = _unwrap_type_name(f["type"])
 
     if var_entries:
         lines.append("        variables: dict[str, Any] = {")
@@ -427,9 +494,30 @@ def _gen_method(lines: list[str], f: dict, op_type: str, types_by_name: dict) ->
             lines.append(f"            {v},")
         lines.append("        }")
         lines.append("        variables = {k: v for k, v in variables.items() if v is not None}")
-        lines.append(f'        return self._execute(query, variables).get("{name}")')
+        data_expr = f'self._execute(query, variables).get("{name}")'
     else:
-        lines.append(f'        return self._execute(query).get("{name}")')
+        data_expr = f'self._execute(query).get("{name}")'
+
+    if is_scalar or base_type_name in SCALAR_MAP or ret_type in ("Any", "None", "bool", "str", "int", "float"):
+        # Scalar returns — no model parsing needed
+        lines.append(f"        return {data_expr}")
+    elif is_list:
+        # List of models — use TypeAdapter for validation
+        # Strip the list[] wrapper to get the inner type for display
+        inner_type = ret_type
+        if inner_type.startswith("list[") and inner_type.endswith("]"):
+            inner_type = inner_type[5:-1]
+        lines.append(f"        _data = {data_expr}")
+        lines.append(f"        return TypeAdapter(list[{inner_type}]).validate_python(_data) if _data else []")
+    else:
+        # Single model — use model_validate
+        # ret_type might be quoted like '"Project"', unquote for the validate call
+        model_name = ret_type.strip('"')
+        if ret_nullable:
+            lines.append(f"        _data = {data_expr}")
+            lines.append(f"        return {model_name}.model_validate(_data) if _data else None")
+        else:
+            lines.append(f"        return {model_name}.model_validate({data_expr})")
 
     lines.append("")
 
@@ -446,6 +534,25 @@ def _gql_type_str(t: dict) -> str:
 
 # ── main ─────────────────────────────────────────────────────────────
 
+def gen_init(input_classes: list[str], type_classes: list[str]) -> str:
+    lines = [
+        '"""Railway Python SDK \u2013 A fully typed client for the Railway GraphQL API."""',
+        "",
+        "from .client import RailwayClient, RailwayError",
+        "from .enums import *  # noqa: F401,F403",
+        "from .inputs import *  # noqa: F401,F403",
+        "from .types import *  # noqa: F401,F403",
+        "",
+        '__all__ = ["RailwayClient", "RailwayError"]',
+        "",
+        "# Resolve forward references now that all models are in scope",
+    ]
+    for name in input_classes + type_classes:
+        lines.append(f"{name}.model_rebuild()")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         print("Usage: generate.py <introspection.json>")
@@ -459,14 +566,19 @@ def main() -> None:
     (out / "enums.py").write_text(gen_enums(types))
     print("✓ enums.py")
 
-    (out / "inputs.py").write_text(gen_input_types(types))
+    inputs_code, input_classes = gen_input_types(types)
+    (out / "inputs.py").write_text(inputs_code)
     print("✓ inputs.py")
 
-    (out / "types.py").write_text(gen_object_types(types))
+    types_code, type_classes = gen_object_types(types)
+    (out / "types.py").write_text(types_code)
     print("✓ types.py")
 
     (out / "client.py").write_text(gen_client(types, schema))
     print("✓ client.py")
+
+    (out / "__init__.py").write_text(gen_init(input_classes, type_classes))
+    print("✓ __init__.py")
 
     print("Done – generated Railway SDK.")
 

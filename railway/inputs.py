@@ -1,18 +1,26 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any, Optional
+
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
 
 from .enums import *  # noqa: F401,F403
 
-@dataclass
-class ApiTokenCreateInput:
+
+class _Base(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class ApiTokenCreateInput(_Base):
     name: str
     workspace_id: Optional[str] = None
 
 
-@dataclass
-class AuditLogFilterInput:
+class AuditLogFilterInput(_Base):
     end_date: Optional[str] = None
     environment_id: Optional[str] = None
     event_types: Optional[list[str]] = None
@@ -20,25 +28,21 @@ class AuditLogFilterInput:
     start_date: Optional[str] = None
 
 
-@dataclass
-class BaseEnvironmentOverrideInput:
+class BaseEnvironmentOverrideInput(_Base):
     base_environment_override_id: Optional[str] = None
 
 
-@dataclass
-class BucketCreateInput:
+class BucketCreateInput(_Base):
     project_id: str
     environment_id: Optional[str] = None
     name: Optional[str] = None
 
 
-@dataclass
-class BucketUpdateInput:
+class BucketUpdateInput(_Base):
     name: str
 
 
-@dataclass
-class CliEventTrackInput:
+class CliEventTrackInput(_Base):
     arch: str
     cli_version: str
     command: str
@@ -50,9 +54,8 @@ class CliEventTrackInput:
     sub_command: Optional[str] = None
 
 
-@dataclass
-class CreateNotificationRuleInput:
-    channel_configs: list["NotificationChannelConfig"]
+class CreateNotificationRuleInput(_Base):
+    channel_configs: list[Any]
     event_types: list[str]
     workspace_id: str
     ephemeral_environments: Optional[bool] = None
@@ -60,8 +63,7 @@ class CreateNotificationRuleInput:
     severities: Optional[list["NotificationSeverity"]] = None
 
 
-@dataclass
-class CustomDomainCreateInput:
+class CustomDomainCreateInput(_Base):
     domain: str
     environment_id: str
     project_id: str
@@ -69,24 +71,20 @@ class CustomDomainCreateInput:
     target_port: Optional[int] = None
 
 
-@dataclass
-class DeploymentInstanceExecutionCreateInput:
+class DeploymentInstanceExecutionCreateInput(_Base):
     service_instance_id: str
 
 
-@dataclass
-class DeploymentInstanceExecutionInput:
+class DeploymentInstanceExecutionInput(_Base):
     deployment_id: str
 
 
-@dataclass
-class DeploymentInstanceExecutionListInput:
+class DeploymentInstanceExecutionListInput(_Base):
     environment_id: str
     service_id: str
 
 
-@dataclass
-class DeploymentListInput:
+class DeploymentListInput(_Base):
     environment_id: Optional[str] = None
     include_deleted: Optional[bool] = None
     project_id: Optional[str] = None
@@ -94,14 +92,12 @@ class DeploymentListInput:
     status: Optional["DeploymentStatusInput"] = None
 
 
-@dataclass
-class DeploymentStatusInput:
+class DeploymentStatusInput(_Base):
     in_: Optional[list["DeploymentStatus"]] = None
     not_in: Optional[list["DeploymentStatus"]] = None
 
 
-@dataclass
-class DeploymentTriggerCreateInput:
+class DeploymentTriggerCreateInput(_Base):
     branch: str
     environment_id: str
     project_id: str
@@ -112,29 +108,25 @@ class DeploymentTriggerCreateInput:
     root_directory: Optional[str] = None
 
 
-@dataclass
-class DeploymentTriggerUpdateInput:
+class DeploymentTriggerUpdateInput(_Base):
     branch: Optional[str] = None
     check_suites: Optional[bool] = None
     repository: Optional[str] = None
     root_directory: Optional[str] = None
 
 
-@dataclass
-class EgressGatewayCreateInput:
+class EgressGatewayCreateInput(_Base):
     environment_id: str
     service_id: str
     region: Optional[str] = None
 
 
-@dataclass
-class EgressGatewayServiceTargetInput:
+class EgressGatewayServiceTargetInput(_Base):
     environment_id: str
     service_id: str
 
 
-@dataclass
-class EnvironmentCreateInput:
+class EnvironmentCreateInput(_Base):
     name: str
     project_id: str
     apply_changes_in_background: Optional[bool] = None
@@ -144,97 +136,83 @@ class EnvironmentCreateInput:
     stage_initial_changes: Optional[bool] = None
 
 
-@dataclass
-class EnvironmentRenameInput:
+class EnvironmentRenameInput(_Base):
     name: str
 
 
-@dataclass
-class EnvironmentTriggersDeployInput:
+class EnvironmentTriggersDeployInput(_Base):
     environment_id: str
     project_id: str
     service_id: str
 
 
-@dataclass
-class EventFilterInput:
+class EventFilterInput(_Base):
     action: Optional["EventStringListFilter"] = None
     object: Optional["EventStringListFilter"] = None
     service_id: Optional["EventStringListFilter"] = None
 
 
-@dataclass
-class EventStringListFilter:
+class EventStringListFilter(_Base):
     in_: Optional[list[str]] = None
     not_in: Optional[list[str]] = None
 
 
-@dataclass
-class ExplicitOwnerInput:
+class ExplicitOwnerInput(_Base):
     id: str
     type: Optional["ResourceOwnerType"] = None
 
 
-@dataclass
-class FeatureFlagToggleInput:
+class FeatureFlagToggleInput(_Base):
     flag: "ActiveFeatureFlag"
 
 
-@dataclass
-class GitHubRepoDeployInput:
+class GitHubRepoDeployInput(_Base):
     project_id: str
     repo: str
     branch: Optional[str] = None
     environment_id: Optional[str] = None
 
 
-@dataclass
-class GitHubRepoUpdateInput:
+class GitHubRepoUpdateInput(_Base):
     environment_id: str
     project_id: str
     service_id: str
 
 
-@dataclass
-class HerokuImportVariablesInput:
+class HerokuImportVariablesInput(_Base):
     environment_id: str
     heroku_app_id: str
     project_id: str
     service_id: str
 
 
-@dataclass
-class IntegrationCreateInput:
+class IntegrationCreateInput(_Base):
     config: Any
     name: str
     project_id: str
     integration_auth_id: Optional[str] = None
 
 
-@dataclass
-class IntegrationUpdateInput:
+class IntegrationUpdateInput(_Base):
     config: Any
     name: str
     project_id: str
     integration_auth_id: Optional[str] = None
 
 
-@dataclass
-class JobApplicationCreateInput:
+class JobApplicationCreateInput(_Base):
     email: str
     job_id: str
     name: str
     why: str
 
 
-@dataclass
-class LoginSessionAuthInput:
+class LoginSessionAuthInput(_Base):
     code: str
     hostname: Optional[str] = None
 
 
-@dataclass
-class NotificationDeliveryFilterInput:
+class NotificationDeliveryFilterInput(_Base):
     environment_id: Optional[str] = None
     only_unread: Optional[bool] = None
     project_id: Optional[str] = None
@@ -243,22 +221,19 @@ class NotificationDeliveryFilterInput:
     workspace_id: Optional[str] = None
 
 
-@dataclass
-class ObservabilityDashboardCreateInput:
+class ObservabilityDashboardCreateInput(_Base):
     environment_id: str
     items: Optional[list["ObservabilityDashboardUpdateInput"]] = None
 
 
-@dataclass
-class ObservabilityDashboardItemConfigInput:
+class ObservabilityDashboardItemConfigInput(_Base):
     logs_filter: Optional[str] = None
     measurements: Optional[list["MetricMeasurement"]] = None
     project_usage_properties: Optional[list["ProjectUsageProperty"]] = None
     resource_ids: Optional[list[str]] = None
 
 
-@dataclass
-class ObservabilityDashboardItemCreateInput:
+class ObservabilityDashboardItemCreateInput(_Base):
     config: "ObservabilityDashboardItemConfigInput"
     id: str
     name: str
@@ -266,33 +241,28 @@ class ObservabilityDashboardItemCreateInput:
     description: Optional[str] = None
 
 
-@dataclass
-class ObservabilityDashboardUpdateInput:
+class ObservabilityDashboardUpdateInput(_Base):
     dashboard_item: "ObservabilityDashboardItemCreateInput"
-    display_config: "DisplayConfig"
+    display_config: Any
     id: str
 
 
-@dataclass
-class PluginCreateInput:
+class PluginCreateInput(_Base):
     name: str
     project_id: str
     environment_id: Optional[str] = None
     friendly_name: Optional[str] = None
 
 
-@dataclass
-class PluginRestartInput:
+class PluginRestartInput(_Base):
     environment_id: Optional[str] = None
 
 
-@dataclass
-class PluginUpdateInput:
+class PluginUpdateInput(_Base):
     friendly_name: str
 
 
-@dataclass
-class PreferencesUpdateData:
+class PreferencesUpdateData(_Base):
     build_failed_email: Optional[bool] = None
     changelog_email: Optional[bool] = None
     community_email: Optional[bool] = None
@@ -305,16 +275,14 @@ class PreferencesUpdateData:
     usage_email: Optional[bool] = None
 
 
-@dataclass
-class PrivateNetworkCreateOrGetInput:
+class PrivateNetworkCreateOrGetInput(_Base):
     environment_id: str
     name: str
     project_id: str
     tags: list[str]
 
 
-@dataclass
-class PrivateNetworkEndpointCreateOrGetInput:
+class PrivateNetworkEndpointCreateOrGetInput(_Base):
     environment_id: str
     private_network_id: str
     service_id: str
@@ -322,8 +290,7 @@ class PrivateNetworkEndpointCreateOrGetInput:
     tags: list[str]
 
 
-@dataclass
-class ProjectCreateInput:
+class ProjectCreateInput(_Base):
     default_environment_name: Optional[str] = None
     description: Optional[str] = None
     is_monorepo: Optional[bool] = None
@@ -335,82 +302,69 @@ class ProjectCreateInput:
     workspace_id: Optional[str] = None
 
 
-@dataclass
-class ProjectCreateRepo:
+class ProjectCreateRepo(_Base):
     branch: str
     full_repo_name: str
 
 
-@dataclass
-class ProjectFeatureFlagToggleInput:
+class ProjectFeatureFlagToggleInput(_Base):
     flag: "ActiveProjectFeatureFlag"
     project_id: str
 
 
-@dataclass
-class ProjectInviteUserInput:
+class ProjectInviteUserInput(_Base):
     email: str
     link: str
 
 
-@dataclass
-class ProjectInvitee:
+class ProjectInvitee(_Base):
     email: str
     role: "ProjectRole"
 
 
-@dataclass
-class ProjectMemberAddInput:
+class ProjectMemberAddInput(_Base):
     project_id: str
     role: "ProjectRole"
     user_id: str
 
 
-@dataclass
-class ProjectMemberRemoveInput:
+class ProjectMemberRemoveInput(_Base):
     project_id: str
     user_id: str
 
 
-@dataclass
-class ProjectMemberUpdateInput:
+class ProjectMemberUpdateInput(_Base):
     project_id: str
     role: "ProjectRole"
     user_id: str
 
 
-@dataclass
-class ProjectTokenCreateInput:
+class ProjectTokenCreateInput(_Base):
     environment_id: str
     name: str
     project_id: str
 
 
-@dataclass
-class ProjectTransferConfirmInput:
+class ProjectTransferConfirmInput(_Base):
     ownership_transfer_id: str
     project_id: str
     destination_workspace_id: Optional[str] = None
 
 
-@dataclass
-class ProjectTransferInitiateInput:
+class ProjectTransferInitiateInput(_Base):
     member_id: str
     project_id: str
 
 
-@dataclass
-class ProjectTransferInput:
+class ProjectTransferInput(_Base):
     workspace_id: str
 
 
-@dataclass
-class ProjectTransferToTeamInput:
+class ProjectTransferToTeamInput(_Base):
     team_id: str
 
 
-@dataclass
-class ProjectUpdateInput:
+class ProjectUpdateInput(_Base):
     base_environment_id: Optional[str] = None
     bot_pr_environments: Optional[bool] = None
     description: Optional[str] = None
@@ -420,44 +374,37 @@ class ProjectUpdateInput:
     pr_deploys: Optional[bool] = None
 
 
-@dataclass
-class RecoveryCodeValidateInput:
+class RecoveryCodeValidateInput(_Base):
     code: str
     two_factor_linking_key: Optional[str] = None
 
 
-@dataclass
-class ReferralInfoUpdateInput:
+class ReferralInfoUpdateInput(_Base):
     code: str
     workspace_id: str
 
 
-@dataclass
-class RegistryCredentialsInput:
+class RegistryCredentialsInput(_Base):
     """Private Docker registry credentials. Only available for Pro plan deployments."""
     password: str
     username: str
 
 
-@dataclass
-class ResetPluginCredentialsInput:
+class ResetPluginCredentialsInput(_Base):
     environment_id: str
 
 
-@dataclass
-class ResetPluginInput:
+class ResetPluginInput(_Base):
     environment_id: str
 
 
-@dataclass
-class ServiceConnectInput:
+class ServiceConnectInput(_Base):
     branch: Optional[str] = None
     image: Optional[str] = None
     repo: Optional[str] = None
 
 
-@dataclass
-class ServiceCreateInput:
+class ServiceCreateInput(_Base):
     project_id: str
     branch: Optional[str] = None
     environment_id: Optional[str] = None
@@ -470,15 +417,13 @@ class ServiceCreateInput:
     variables: Optional[Any] = None
 
 
-@dataclass
-class ServiceDomainCreateInput:
+class ServiceDomainCreateInput(_Base):
     environment_id: str
     service_id: str
     target_port: Optional[int] = None
 
 
-@dataclass
-class ServiceDomainUpdateInput:
+class ServiceDomainUpdateInput(_Base):
     domain: str
     environment_id: str
     service_domain_id: str
@@ -486,22 +431,19 @@ class ServiceDomainUpdateInput:
     target_port: Optional[int] = None
 
 
-@dataclass
-class ServiceFeatureFlagToggleInput:
+class ServiceFeatureFlagToggleInput(_Base):
     flag: "ActiveServiceFeatureFlag"
     service_id: str
 
 
-@dataclass
-class ServiceInstanceLimitsUpdateInput:
+class ServiceInstanceLimitsUpdateInput(_Base):
     environment_id: str
     service_id: str
     memory_gb: Optional[float] = None
     v_cp_us: Optional[float] = None
 
 
-@dataclass
-class ServiceInstanceUpdateInput:
+class ServiceInstanceUpdateInput(_Base):
     build_command: Optional[str] = None
     builder: Optional["Builder"] = None
     cron_schedule: Optional[str] = None
@@ -527,20 +469,17 @@ class ServiceInstanceUpdateInput:
     watch_patterns: Optional[list[str]] = None
 
 
-@dataclass
-class ServiceSourceInput:
+class ServiceSourceInput(_Base):
     image: Optional[str] = None
     repo: Optional[str] = None
 
 
-@dataclass
-class ServiceUpdateInput:
+class ServiceUpdateInput(_Base):
     icon: Optional[str] = None
     name: Optional[str] = None
 
 
-@dataclass
-class SharedVariableConfigureInput:
+class SharedVariableConfigureInput(_Base):
     disabled_service_ids: list[str]
     enabled_service_ids: list[str]
     environment_id: str
@@ -548,32 +487,27 @@ class SharedVariableConfigureInput:
     project_id: str
 
 
-@dataclass
-class SshPublicKeyCreateInput:
+class SshPublicKeyCreateInput(_Base):
     name: str
     public_key: str
 
 
-@dataclass
-class TCPProxyCreateInput:
+class TCPProxyCreateInput(_Base):
     application_port: int
     environment_id: str
     service_id: str
 
 
-@dataclass
-class TemplateCloneInput:
+class TemplateCloneInput(_Base):
     code: str
     workspace_id: Optional[str] = None
 
 
-@dataclass
-class TemplateDeleteInput:
+class TemplateDeleteInput(_Base):
     workspace_id: Optional[str] = None
 
 
-@dataclass
-class TemplateDeployInput:
+class TemplateDeployInput(_Base):
     services: list["TemplateDeployService"]
     environment_id: Optional[str] = None
     project_id: Optional[str] = None
@@ -581,8 +515,7 @@ class TemplateDeployInput:
     workspace_id: Optional[str] = None
 
 
-@dataclass
-class TemplateDeployService:
+class TemplateDeployService(_Base):
     id: str
     service_name: str
     template: str
@@ -598,26 +531,23 @@ class TemplateDeployService:
     start_command: Optional[str] = None
     tcp_proxy_application_port: Optional[int] = None
     variables: Optional[Any] = None
-    volumes: Optional[list["TemplateVolume"]] = None
+    volumes: Optional[list[Any]] = None
 
 
-@dataclass
-class TemplateDeployV2Input:
-    serialized_config: "SerializedTemplateConfig"
+class TemplateDeployV2Input(_Base):
+    serialized_config: Any
     template_id: str
     environment_id: Optional[str] = None
     project_id: Optional[str] = None
     workspace_id: Optional[str] = None
 
 
-@dataclass
-class TemplateGenerateInput:
+class TemplateGenerateInput(_Base):
     project_id: str
     environment_id: Optional[str] = None
 
 
-@dataclass
-class TemplatePublishInput:
+class TemplatePublishInput(_Base):
     category: str
     description: str
     readme: str
@@ -626,8 +556,7 @@ class TemplatePublishInput:
     workspace_id: Optional[str] = None
 
 
-@dataclass
-class TemplateServiceSourceEjectInput:
+class TemplateServiceSourceEjectInput(_Base):
     project_id: str
     repo_name: str
     repo_owner: str
@@ -635,58 +564,49 @@ class TemplateServiceSourceEjectInput:
     upstream_url: str
 
 
-@dataclass
-class TwoFactorInfoCreateInput:
+class TwoFactorInfoCreateInput(_Base):
     token: str
 
 
-@dataclass
-class TwoFactorInfoValidateInput:
+class TwoFactorInfoValidateInput(_Base):
     token: str
     two_factor_linking_key: Optional[str] = None
 
 
-@dataclass
-class UpdateNotificationRuleInput:
-    channel_configs: Optional[list["NotificationChannelConfig"]] = None
+class UpdateNotificationRuleInput(_Base):
+    channel_configs: Optional[list[Any]] = None
     ephemeral_environments: Optional[bool] = None
     event_types: Optional[list[str]] = None
     severities: Optional[list["NotificationSeverity"]] = None
 
 
-@dataclass
-class UsageLimitRemoveInput:
+class UsageLimitRemoveInput(_Base):
     customer_id: str
 
 
-@dataclass
-class UsageLimitSetInput:
+class UsageLimitSetInput(_Base):
     customer_id: str
     soft_limit_dollars: int
     hard_limit_dollars: Optional[int] = None
 
 
-@dataclass
-class UserFlagsRemoveInput:
+class UserFlagsRemoveInput(_Base):
     flags: list["UserFlag"]
     user_id: Optional[str] = None
 
 
-@dataclass
-class UserFlagsSetInput:
+class UserFlagsSetInput(_Base):
     flags: list["UserFlag"]
     user_id: Optional[str] = None
 
 
-@dataclass
-class UserProfileUpdateInput:
+class UserProfileUpdateInput(_Base):
     is_public: bool
     bio: Optional[str] = None
     website: Optional[str] = None
 
 
-@dataclass
-class VariableCollectionUpsertInput:
+class VariableCollectionUpsertInput(_Base):
     environment_id: str
     project_id: str
     variables: Any
@@ -695,16 +615,14 @@ class VariableCollectionUpsertInput:
     skip_deploys: Optional[bool] = None
 
 
-@dataclass
-class VariableDeleteInput:
+class VariableDeleteInput(_Base):
     environment_id: str
     name: str
     project_id: str
     service_id: Optional[str] = None
 
 
-@dataclass
-class VariableUpsertInput:
+class VariableUpsertInput(_Base):
     environment_id: str
     name: str
     project_id: str
@@ -713,8 +631,7 @@ class VariableUpsertInput:
     skip_deploys: Optional[bool] = None
 
 
-@dataclass
-class VolumeCreateInput:
+class VolumeCreateInput(_Base):
     mount_path: str
     project_id: str
     environment_id: Optional[str] = None
@@ -722,62 +639,52 @@ class VolumeCreateInput:
     service_id: Optional[str] = None
 
 
-@dataclass
-class VolumeInstanceUpdateInput:
+class VolumeInstanceUpdateInput(_Base):
     mount_path: Optional[str] = None
     service_id: Optional[str] = None
     state: Optional["VolumeState"] = None
 
 
-@dataclass
-class VolumeUpdateInput:
+class VolumeUpdateInput(_Base):
     name: Optional[str] = None
 
 
-@dataclass
-class WorkspaceInviteCodeCreateInput:
+class WorkspaceInviteCodeCreateInput(_Base):
     role: str
 
 
-@dataclass
-class WorkspacePermissionChangeInput:
+class WorkspacePermissionChangeInput(_Base):
     role: "TeamRole"
     user_id: str
     workspace_id: str
 
 
-@dataclass
-class WorkspacePolicyItemUpdateInput:
+class WorkspacePolicyItemUpdateInput(_Base):
     enabled: bool
     policy: "WorkspacePolicyName"
 
 
-@dataclass
-class WorkspaceTrustedDomainCreateInput:
+class WorkspaceTrustedDomainCreateInput(_Base):
     domain_name: str
     role: str
     workspace_id: str
 
 
-@dataclass
-class WorkspaceUpdateInput:
+class WorkspaceUpdateInput(_Base):
     avatar: Optional[str] = None
     name: Optional[str] = None
     preferred_region: Optional[str] = None
 
 
-@dataclass
-class WorkspaceUserInviteInput:
+class WorkspaceUserInviteInput(_Base):
     code: str
     email: str
 
 
-@dataclass
-class WorkspaceUserRemoveInput:
+class WorkspaceUserRemoveInput(_Base):
     user_id: str
 
 
-@dataclass
-class customerTogglePayoutsToCreditsInput:
+class customerTogglePayoutsToCreditsInput(_Base):
     is_withdrawing_to_credits: bool
 

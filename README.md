@@ -1,4 +1,4 @@
-# railway-python
+# Railway Python GraphQL API Client
 
 A fully typed Python client for the [Railway](https://railway.com) GraphQL API.
 
